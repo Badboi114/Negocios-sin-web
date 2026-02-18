@@ -1,0 +1,28 @@
+# Entorno virtual
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Datos generados
+prospectos.csv
+prospectos.xlsx
+contactados.json
+
+# Sesión WhatsApp
+whatsapp_session/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

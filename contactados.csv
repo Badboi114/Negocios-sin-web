@@ -1,8 +1,18 @@
-﻿Nombre,Telefono_Limpio,Fecha_Contacto
-Muela del Diablo,59176220409,2026-03-01 00:00:00
-Factory Grill & Bar Cochabamba,59178312126,2026-03-01 00:00:00
-Da Vinci Restaurante,59172243301,2026-03-01 01:08:56
-Freddy's Pizza La Bella Italia,59163860761,2026-03-01 01:10:29
-Terraza Arturo - Café & Vinos -,59177452267,2026-03-01 01:11:42
-World Cake Tu Masa Miga,59175916055,2026-03-01 01:14:55
-Le Petit Brunch & Bakery,59172202024,2026-03-01 01:16:01
+﻿Nombre,Telefono_Limpio,Fecha_Contacto,Estado
+Muela del Diablo,59176220409,2026-03-01 00:00:00,
+Factory Grill & Bar Cochabamba,59178312126,2026-03-01 00:00:00,
+Da Vinci Restaurante,59172243301,2026-03-01 01:08:56,
+Freddy's Pizza La Bella Italia,59163860761,2026-03-01 01:10:29,
+Terraza Arturo - Café & Vinos -,59177452267,2026-03-01 01:11:42,
+World Cake Tu Masa Miga,59175916055,2026-03-01 01:14:55,
+Le Petit Brunch & Bakery,59172202024,2026-03-01 01:16:01,
+TALLER ELÉCTRICO CHISPALO ORIGINAL,59175997535,2026-03-01 17:25:18,Enviado
+ESEV empresa De Servicios Electricos Villarroel,59177428761,2026-03-01 17:27:05,Enviado
+"Taller eléctrico ""Raúl""",59167828322,2026-03-01 17:28:40,Enviado
+Oficina Nohelia Torrico Abogada,59172767071,2026-03-01 17:30:19,Enviado
+Consorcio Jurídico Rivera & Asociados,59179755477,2026-03-01 17:31:34,Enviado
+APOYO Abogados & Consultores,59170786222,2026-03-01 17:56:43,Fallido: Número no tiene WhatsApp
+Trends Beauty Center,59172213108,2026-03-01 17:48:53,Enviado
+Thyka Lau Color Hair,59160360914,2026-03-01 17:51:17,Enviado
+Peluquería Miriam,59179982201,2026-03-01 17:53:05,Enviado
+Mueblería en melamina Hogar,59174146943,2026-03-01 17:55:19,Enviado

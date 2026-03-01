@@ -219,7 +219,7 @@ def busqueda_automatica(ciudad: str, limite: int) -> list[dict]:
 
 
 def main():
-    """Flujo principal 100% automático."""
+    """Flujo principal 100% automático con loop hasta completar la meta."""
     console.print(BANNER)
 
     # ── Sincronizar ──
@@ -244,67 +244,109 @@ def main():
         ))
         return
 
-    console.print(Panel(
-        f"[bold green]🔍 BÚSQUEDA AUTOMÁTICA[/bold green]\n\n"
-        f"Enviados hoy: [bold]{enviados_hoy}[/bold]\n"
-        f"Faltan: [bold]{faltantes}[/bold] para completar la meta de "
-        f"[bold]{config.MENSAJES_DIARIOS_META}[/bold]\n"
-        f"Ciudad: [bold]{ciudad}[/bold]\n\n"
-        f"Buscando negocios SIN web automáticamente...",
-        border_style="green",
-    ))
+    # ── LOOP: Buscar → Enviar → Repetir hasta completar la meta ──
+    MAX_RONDAS = 10  # Evitar loop infinito si no hay negocios
+    total_enviados_sesion = 0
+    total_fallidos_sesion = 0
+    ronda = 0
 
-    # ── PASO 1: Buscar ──
-    nuevos = busqueda_automatica(ciudad, faltantes)
+    while faltantes > 0 and ronda < MAX_RONDAS:
+        ronda += 1
 
-    if not nuevos:
+        # Buscar un extra para compensar fallos (~40% fallan por no tener WhatsApp)
+        buscar_cantidad = min(faltantes * 2, faltantes + 10)
+
         console.print(Panel(
-            "[bold yellow]⚠️ NO SE ENCONTRARON NEGOCIOS NUEVOS[/bold yellow]\n\n"
-            "Se intentará con otra ciudad la próxima ejecución.",
-            border_style="yellow",
+            f"[bold green]🔍 RONDA {ronda} — BÚSQUEDA AUTOMÁTICA[/bold green]\n\n"
+            f"Enviados hoy: [bold]{contar_enviados_hoy()}[/bold]\n"
+            f"Faltan: [bold]{faltantes}[/bold] para completar la meta de "
+            f"[bold]{config.MENSAJES_DIARIOS_META}[/bold]\n"
+            f"Buscando: [bold]{buscar_cantidad}[/bold] negocios (extra para compensar fallos)\n"
+            f"Ciudad: [bold]{ciudad}[/bold]",
+            border_style="green",
         ))
-        return
 
-    # ── Guardar prospectos ──
-    exportar_csv(nuevos)
-    exportar_excel(nuevos)
+        # ── Buscar ──
+        nuevos = busqueda_automatica(ciudad, buscar_cantidad)
 
-    console.print(Panel(
-        f"[bold green]📊 {len(nuevos)} NEGOCIOS ENCONTRADOS[/bold green]\n"
-        f"Ciudad: [bold]{ciudad}[/bold]",
-        border_style="green",
-    ))
-    mostrar_resumen(nuevos)
+        if not nuevos:
+            console.print(Panel(
+                "[bold yellow]⚠️ NO SE ENCONTRARON NEGOCIOS NUEVOS[/bold yellow]\n\n"
+                "Cambiando de ciudad para la siguiente ronda...",
+                border_style="yellow",
+            ))
+            # Cambiar a otra ciudad si esta se agotó
+            idx_actual = config.CIUDADES_BOLIVIA.index(ciudad) if ciudad in config.CIUDADES_BOLIVIA else 0
+            ciudad = config.CIUDADES_BOLIVIA[(idx_actual + 1) % len(config.CIUDADES_BOLIVIA)]
+            continue
 
-    # ── PASO 2: Enviar por WhatsApp (automático) ──
-    console.print(Panel(
-        f"[bold cyan]📤 ENVIANDO {len(nuevos)} MENSAJES POR WHATSAPP[/bold cyan]\n\n"
-        f"100% automático. Si no hay sesión activa,\n"
-        f"escanea el QR cuando aparezca en el navegador.",
-        border_style="cyan",
-    ))
+        # ── Guardar prospectos ──
+        exportar_csv(nuevos)
+        exportar_excel(nuevos)
 
-    nuevos = iniciar_envio_masivo(nuevos) or nuevos
+        console.print(Panel(
+            f"[bold green]📊 {len(nuevos)} NEGOCIOS ENCONTRADOS[/bold green]\n"
+            f"Ciudad: [bold]{ciudad}[/bold]",
+            border_style="green",
+        ))
+        mostrar_resumen(nuevos)
 
-    # ── PASO 3: Guardar contactados ──
-    console.print("\n[cyan]📋 Registrando contactados...[/cyan]")
-    marcar_como_contactados(nuevos)
-    exportar_csv(nuevos)
-    exportar_excel(nuevos)
+        # ── Enviar por WhatsApp (automático) ──
+        console.print(Panel(
+            f"[bold cyan]📤 ENVIANDO {len(nuevos)} MENSAJES POR WHATSAPP[/bold cyan]\n\n"
+            f"100% automático. Si no hay sesión activa,\n"
+            f"escanea el QR cuando aparezca en el navegador.",
+            border_style="cyan",
+        ))
 
-    # ── PASO 4: Subir al repositorio ──
-    subir_contactados_a_remoto()
+        nuevos = iniciar_envio_masivo(nuevos) or nuevos
+
+        # ── Guardar contactados ──
+        console.print("\n[cyan]📋 Registrando contactados...[/cyan]")
+        marcar_como_contactados(nuevos)
+        exportar_csv(nuevos)
+        exportar_excel(nuevos)
+
+        # ── Contar resultados de esta ronda ──
+        enviados_ronda = len([p for p in nuevos if p.get("Estado") == "Enviado"])
+        fallidos_ronda = len([p for p in nuevos if str(p.get("Estado", "")).startswith("Fallido")])
+        total_enviados_sesion += enviados_ronda
+        total_fallidos_sesion += fallidos_ronda
+
+        console.print(Panel(
+            f"[cyan]📊 RONDA {ronda} COMPLETADA[/cyan]\n\n"
+            f"✅ Enviados esta ronda: {enviados_ronda}\n"
+            f"❌ Fallidos esta ronda: {fallidos_ronda}",
+            border_style="cyan",
+        ))
+
+        # ── Subir al repositorio después de cada ronda ──
+        subir_contactados_a_remoto()
+
+        # ── Recalcular faltantes ──
+        faltantes = calcular_faltantes_hoy()
+
+        if faltantes > 0:
+            console.print(f"\n[yellow]⏳ Faltan {faltantes} mensajes. "
+                          f"Iniciando nueva ronda de búsqueda...[/yellow]\n")
+            pausa = random.uniform(10, 20)
+            console.print(f"[dim]Pausa de {pausa:.0f}s antes de la siguiente ronda...[/dim]")
+            time.sleep(pausa)
 
     # ── Resumen final ──
-    enviados = len([p for p in nuevos if p.get("Estado") == "Enviado"])
-    fallidos = len([p for p in nuevos if str(p.get("Estado", "")).startswith("Fallido")])
     total_hoy = contar_enviados_hoy()
 
+    if faltantes == 0:
+        estado_msg = f"[bold green]🎉 META DIARIA COMPLETADA — {total_hoy}/{config.MENSAJES_DIARIOS_META}[/bold green]"
+    else:
+        estado_msg = (f"[bold yellow]⚠ Meta parcial: {total_hoy}/{config.MENSAJES_DIARIOS_META}[/bold yellow]\n"
+                      f"Se completaron {MAX_RONDAS} rondas. Ejecuta de nuevo si es necesario.")
+
     console.print(Panel(
-        f"[bold green]🎉 SESIÓN COMPLETADA[/bold green]\n\n"
-        f"✅ Enviados esta sesión: {enviados}\n"
-        f"❌ Fallidos: {fallidos}\n"
-        f"📊 Total enviados hoy: {total_hoy}/{config.MENSAJES_DIARIOS_META}\n"
+        f"{estado_msg}\n\n"
+        f"✅ Enviados esta sesión: {total_enviados_sesion}\n"
+        f"❌ Fallidos esta sesión: {total_fallidos_sesion}\n"
+        f"🔄 Rondas ejecutadas: {ronda}\n"
         f"🏙️  Ciudad: {ciudad}\n"
         f"📁 Archivos: {config.ARCHIVO_CSV}, {config.ARCHIVO_HISTORICO}",
         border_style="green",

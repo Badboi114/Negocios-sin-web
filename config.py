@@ -76,6 +76,7 @@ CATEGORIAS_NEGOCIOS = [
 # --- Archivo de control de contactos ya enviados ---
 ARCHIVO_CONTACTADOS = "contactados.csv"
 ARCHIVO_HISTORICO = "historico_contactos.csv"
+ARCHIVO_CATEGORIAS_BUSCADAS = "categorias_buscadas.csv"
 
 # --- Pausas anti-bloqueo (en segundos) ---
 PAUSA_MIN = 3          # Mínimo de espera entre acciones

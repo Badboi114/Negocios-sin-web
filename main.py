@@ -31,7 +31,9 @@ from whatsapp_sender import iniciar_envio_masivo
 from gestor_contactados import (
     filtrar_nuevos_prospectos,
     marcar_como_contactados,
-    obtener_estadisticas
+    obtener_estadisticas,
+    obtener_categorias_pendientes,
+    marcar_categoria_buscada,
 )
 import config
 
@@ -55,7 +57,7 @@ BANNER = """
 """
 
 
-def _run_git(args: list[str]) -> bool:
+def _run_git(args: list[str], timeout: int = 30) -> bool:
     """Ejecuta un comando git en el directorio del proyecto."""
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     try:
@@ -64,7 +66,7 @@ def _run_git(args: list[str]) -> bool:
             cwd=repo_dir,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=timeout,
         )
         if result.returncode == 0:
             return True
@@ -78,7 +80,11 @@ def _run_git(args: list[str]) -> bool:
 def sincronizar_desde_remoto():
     """Descarga los últimos cambios del repositorio remoto (contactados actualizados)."""
     console.print("[cyan]🔄 Sincronizando historial de contactados desde el repositorio remoto...[/cyan]")
-    ok = _run_git(["pull", "--rebase", "origin", "main"])
+    # Guardar cambios locales antes del pull para evitar conflictos
+    _run_git(["stash", "--include-untracked"])
+    ok = _run_git(["pull", "--rebase", "origin", "main"], timeout=60)
+    # Restaurar cambios locales
+    _run_git(["stash", "pop"])
     if ok:
         console.print("[green]✅ Historial actualizado.[/green]")
     else:
@@ -86,8 +92,8 @@ def sincronizar_desde_remoto():
 
 
 def subir_contactados_a_remoto():
-    """Sube contactados.csv e historico_contactos.csv al repositorio remoto."""
-    archivos = [config.ARCHIVO_CONTACTADOS, config.ARCHIVO_HISTORICO]
+    """Sube contactados.csv, historico_contactos.csv y categorias_buscadas.csv al repositorio remoto."""
+    archivos = [config.ARCHIVO_CONTACTADOS, config.ARCHIVO_HISTORICO, config.ARCHIVO_CATEGORIAS_BUSCADAS]
     existentes = [f for f in archivos if os.path.exists(f)]
     if not existentes:
         return
@@ -97,7 +103,7 @@ def subir_contactados_a_remoto():
     _run_git(["add"] + existentes)
     fecha = time.strftime("%Y-%m-%d %H:%M")
     _run_git(["commit", "-m", f"chore: actualizar contactados [{fecha}]"])
-    ok = _run_git(["push", "origin", "main"])
+    ok = _run_git(["push", "origin", "main"], timeout=60)
 
     if ok:
         console.print("[green]✅ Historial de contactados subido al repositorio.[/green]")
@@ -108,12 +114,15 @@ def subir_contactados_a_remoto():
 def mostrar_config():
     """Muestra la configuración actual antes de arrancar."""
     stats = obtener_estadisticas()
-    
+    categorias_pendientes = obtener_categorias_pendientes()
+    total_cats = len(config.CATEGORIAS_NEGOCIOS)
+    cats_pendientes = len(categorias_pendientes)
+
     console.print(Panel(
         f"[cyan]📍 Ciudad:[/cyan] [bold]{config.CIUDAD}[/bold]\n"
         f"[cyan]🌐 Código de país:[/cyan] [bold]+{config.CODIGO_PAIS}[/bold]\n"
         f"[cyan]📊 Mensajes diarios (máx):[/cyan] [bold]{config.MENSAJES_DIARIOS_MAX}[/bold]\n"
-        f"[cyan]📂 Categorías a buscar:[/cyan] [bold]{len(config.CATEGORIAS_NEGOCIOS)}[/bold]\n"
+        f"[cyan]📂 Categorías pendientes:[/cyan] [bold]{cats_pendientes}/{total_cats}[/bold]\n"
         f"[cyan]📋 Negocios ya contactados:[/cyan] [bold]{stats['total_contactados']}[/bold]",
         title="⚙️ Configuración",
         border_style="cyan",
@@ -124,17 +133,28 @@ def busqueda_automatica_limitada() -> list[dict]:
     """
     Busca negocios SIN web hasta alcanzar MENSAJES_DIARIOS_MAX.
     Filtra automáticamente los ya contactados.
+    Salta categorías ya agotadas y aleatoriza el orden.
     """
     todos_los_prospectos = []
-    total_categorias = len(config.CATEGORIAS_NEGOCIOS)
     limite = config.MENSAJES_DIARIOS_MAX
 
+    # Obtener solo categorías que aún tienen resultados potenciales
+    categorias = obtener_categorias_pendientes()
+    if not categorias:
+        console.print("[yellow]⚠ Todas las categorías han sido buscadas. "
+                      "Se reiniciará la búsqueda desde el principio.[/yellow]")
+        categorias = list(config.CATEGORIAS_NEGOCIOS)
+
+    # Aleatorizar para variar los tipos de negocios contactados cada día
+    random.shuffle(categorias)
+    total_categorias = len(categorias)
+
     console.print(f"\n[bold yellow]🚀 BÚSQUEDA AUTOMÁTICA HASTA {limite} NUEVOS NEGOCIOS[/bold yellow]")
-    console.print(f"[cyan]   Buscando en {total_categorias} categorías...[/cyan]\n")
+    console.print(f"[cyan]   Buscando en {total_categorias} categorías pendientes...[/cyan]\n")
 
     categoria_idx = 0
     while len(todos_los_prospectos) < limite and categoria_idx < total_categorias:
-        categoria = config.CATEGORIAS_NEGOCIOS[categoria_idx]
+        categoria = categorias[categoria_idx]
         termino = f"{categoria} en {config.CIUDAD}"
 
         console.print(Panel(
@@ -145,27 +165,38 @@ def busqueda_automatica_limitada() -> list[dict]:
 
         try:
             # Buscar negocios de esta categoría
-            # Ajustar cantidad para alcanzar el límite
             faltantes = limite - len(todos_los_prospectos)
             cantidad_a_buscar = min(config.CANTIDAD_POR_CATEGORIA, faltantes + 5)
-            
+
             negocios = buscar_negocios(termino, cantidad_a_buscar)
 
             if negocios:
                 # Generar mensajes
                 prospectos = procesar_prospectos(negocios)
-                
+
                 # FILTRAR: excluir ya contactados
                 prospectos_nuevos = filtrar_nuevos_prospectos(prospectos)
-                
+
+                if prospectos_nuevos:
+                    # Deduplicar contra lo ya encontrado en esta sesión
+                    telefonos_sesion = {p["Telefono_Limpio"] for p in todos_los_prospectos}
+                    prospectos_nuevos = [
+                        p for p in prospectos_nuevos
+                        if p["Telefono_Limpio"] not in telefonos_sesion
+                    ]
+
                 if prospectos_nuevos:
                     todos_los_prospectos.extend(prospectos_nuevos)
                     console.print(f"[green]✅ {len(prospectos_nuevos)} NUEVOS "
                                   f"— Total: {len(todos_los_prospectos)}/{limite}[/green]\n")
                 else:
                     console.print(f"[yellow]⚠ Todos ya fueron contactados en esta categoría[/yellow]\n")
+                    # Marcar categoría como agotada
+                    marcar_categoria_buscada(categoria)
             else:
                 console.print(f"[yellow]⚠ No se encontraron negocios sin web[/yellow]\n")
+                # Categoría sin resultados: marcar como agotada
+                marcar_categoria_buscada(categoria)
 
         except KeyboardInterrupt:
             console.print(f"\n[yellow]⚠ Búsqueda interrumpida[/yellow]")
@@ -179,7 +210,7 @@ def busqueda_automatica_limitada() -> list[dict]:
             break
 
         categoria_idx += 1
-        
+
         # Pausa entre categorías
         if categoria_idx < total_categorias:
             pausa = random.uniform(5, 10)
@@ -250,7 +281,7 @@ def main():
     ))
 
     if Confirm.ask("\n¿Enviar ahora?", default=True):
-        nuevos = iniciar_envio_masivo(nuevos)
+        nuevos = iniciar_envio_masivo(nuevos) or nuevos
 
         # ── PASO 4: Guardar contactados ──
         console.print("\n[cyan]📋 Registrando negocios contactados...[/cyan]")

@@ -63,17 +63,24 @@ def filtrar_nuevos_prospectos(prospectos: list[dict]) -> list[dict]:
 
 def marcar_como_contactados(prospectos: list[dict]):
     """
-    Guarda los prospectos enviados en el historial de contactados.
-    También los agrega al archivo histórico para auditoría.
-    
+    Guarda TODOS los prospectos procesados (enviados Y fallidos) en el historial
+    para no volver a contactarlos. También agrega al archivo histórico para auditoría.
+
     Args:
-        prospectos: Lista de prospectos que se enviaron correctamente.
+        prospectos: Lista de prospectos procesados (cualquier estado excepto Pendiente).
     """
-    enviados = [p for p in prospectos if p.get("Estado") == "Enviado"]
-    
-    if not enviados:
+    # Guardar tanto enviados como fallidos para no reintentar
+    procesados = [
+        p for p in prospectos
+        if p.get("Estado") and p.get("Estado") != "Pendiente"
+    ]
+
+    if not procesados:
         return
-    
+
+    enviados = [p for p in procesados if p.get("Estado") == "Enviado"]
+    fallidos = [p for p in procesados if str(p.get("Estado", "")).startswith("Fallido")]
+
     # 1. Agregar a CONTACTADOS (para no volver a contactar)
     contactados_existentes = []
     if os.path.exists(config.ARCHIVO_CONTACTADOS):
@@ -84,21 +91,26 @@ def marcar_como_contactados(prospectos: list[dict]):
             ).to_dict('records')
         except Exception:
             pass
-    
-    # Agregar nuevos
-    for p in enviados:
+
+    # Agregar todos los procesados (enviados + fallidos)
+    for p in procesados:
         contactados_existentes.append({
             "Nombre": p.get("Nombre", ""),
             "Telefono_Limpio": p.get("Telefono_Limpio", ""),
             "Fecha_Contacto": p.get("Fecha_Envio", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            "Estado": p.get("Estado", ""),
         })
-    
+
     # Guardar contactados
     df = pd.DataFrame(contactados_existentes)
     df.drop_duplicates(subset=['Telefono_Limpio'], keep='first', inplace=True)
     df.to_csv(config.ARCHIVO_CONTACTADOS, index=False, encoding='utf-8-sig')
-    console.print(f"[green]✅ {len(enviados)} contactos guardados en historial[/green]")
-    
+
+    if enviados:
+        console.print(f"[green]✅ {len(enviados)} contactos enviados guardados en historial[/green]")
+    if fallidos:
+        console.print(f"[yellow]⚠ {len(fallidos)} contactos fallidos registrados (no se reintentarán)[/yellow]")
+
     # 2. Agregar al archivo histórico (auditoría)
     historico_existente = []
     if os.path.exists(config.ARCHIVO_HISTORICO):
@@ -109,17 +121,18 @@ def marcar_como_contactados(prospectos: list[dict]):
             ).to_dict('records')
         except Exception:
             pass
-    
-    for p in enviados:
+
+    for p in procesados:
         historico_existente.append({
             "Fecha_Envio": p.get("Fecha_Envio", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             "Nombre": p.get("Nombre", ""),
             "Telefono": p.get("Telefono_Limpio", ""),
             "Categoria": p.get("Categoria", ""),
-            "Estado": "Enviado correctamente",
+            "Estado": p.get("Estado", ""),
         })
-    
+
     df_historico = pd.DataFrame(historico_existente)
+    df_historico.drop_duplicates(subset=['Telefono'], keep='first', inplace=True)
     df_historico.to_csv(config.ARCHIVO_HISTORICO, index=False, encoding='utf-8-sig')
 
 
@@ -128,11 +141,51 @@ def obtener_estadisticas() -> dict:
     Retorna estadísticas de contactos.
     """
     contactados = cargar_contactados()
-    
+
     stats = {
         "total_contactados": len(contactados),
         "archivo_contactados": config.ARCHIVO_CONTACTADOS,
         "archivo_historico": config.ARCHIVO_HISTORICO,
     }
-    
+
     return stats
+
+
+def cargar_categorias_buscadas() -> dict:
+    """
+    Carga las categorías que ya fueron completamente buscadas.
+
+    Returns:
+        Dict con {categoria: fecha_busqueda}
+    """
+    if not os.path.exists(config.ARCHIVO_CATEGORIAS_BUSCADAS):
+        return {}
+
+    try:
+        df = pd.read_csv(config.ARCHIVO_CATEGORIAS_BUSCADAS, encoding='utf-8-sig')
+        return dict(zip(df['Categoria'].astype(str), df['Fecha_Busqueda'].astype(str)))
+    except Exception:
+        return {}
+
+
+def marcar_categoria_buscada(categoria: str):
+    """
+    Registra una categoría como completamente buscada (sin más resultados nuevos).
+    """
+    existentes = cargar_categorias_buscadas()
+    existentes[categoria] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    df = pd.DataFrame([
+        {"Categoria": k, "Fecha_Busqueda": v}
+        for k, v in existentes.items()
+    ])
+    df.to_csv(config.ARCHIVO_CATEGORIAS_BUSCADAS, index=False, encoding='utf-8-sig')
+
+
+def obtener_categorias_pendientes() -> list[str]:
+    """
+    Retorna las categorías que aún no han sido completamente buscadas.
+    """
+    buscadas = cargar_categorias_buscadas()
+    pendientes = [c for c in config.CATEGORIAS_NEGOCIOS if c not in buscadas]
+    return pendientes

@@ -3,6 +3,7 @@
 # ============================================================
 
 import pandas as pd
+from openpyxl.utils import get_column_letter
 from rich.console import Console
 from rich.table import Table
 
@@ -56,8 +57,8 @@ def exportar_excel(prospectos: list[dict]) -> str:
                 df[col].astype(str).map(len).max(),
                 len(col)
             )
-            # Limitar ancho máximo a 60 caracteres
-            worksheet.column_dimensions[chr(65 + i)].width = min(max_len + 2, 60)
+            col_letter = get_column_letter(i + 1)
+            worksheet.column_dimensions[col_letter].width = min(max_len + 2, 60)
 
     console.print(f"[green]📁 Excel guardado: {ruta}[/green]")
     return ruta

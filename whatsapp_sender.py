@@ -469,32 +469,10 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
                             "Pausa entre mensajes"
                         )
         
-        # 5. Cerrar sesión de WhatsApp Web de forma segura
-            console.print("\n[cyan]🔓 Cerrando sesión de WhatsApp...[/cyan]")
-            try:
-                page.goto("https://web.whatsapp.com", timeout=10000)
-                time.sleep(2)
-                try:
-                    menu_btn = page.locator('button[title*="Menu"]').or_(
-                        page.locator('button[data-testid="headerMenuButton"]')
-                    )
-                    if menu_btn.count() > 0:
-                        menu_btn.first.click()
-                        time.sleep(1)
-                        logout_opts = page.locator(
-                            'text="Cerrar sesión"'
-                        ).or_(page.locator('text="Log out"')).or_(
-                            page.locator('text="Sign out"')
-                        )
-                        if logout_opts.count() > 0:
-                            logout_opts.first.click()
-                            time.sleep(2)
-                except Exception:
-                    pass
-                console.print("[green]✅ Sesión cerrada[/green]")
-            except Exception as e:
-                console.print(f"[yellow]⚠ No se pudo cerrar sesión: {e}[/yellow]")
-            
+        # 5. NO cerrar sesión de WhatsApp Web — mantener la sesión para futuras ejecuciones
+        # Esto evita tener que escanear el QR cada vez
+            console.print("\n[cyan]📱 Sesión de WhatsApp preservada para la próxima ejecución.[/cyan]")
+
             # 6. Resumen final
             console.print(Panel(
                 f"[bold green]📊 RESUMEN DE ENVÍO[/bold green]\n\n"
@@ -514,3 +492,5 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
                 context.close()
             except Exception:
                 pass
+
+    return prospectos

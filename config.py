@@ -13,38 +13,52 @@ MENSAJES_DIARIOS_META = 20
 # --- Cantidad de negocios a buscar por cada categoría ---
 CANTIDAD_POR_CATEGORIA = 5
 
-# --- Ciudades de Bolivia (se busca en orden, rotando) ---
+# --- Ciudades de Bolivia (SECUENCIAL: se agota una antes de pasar a la siguiente) ---
+# Primero TODO el departamento de Cochabamba, luego otros departamentos.
 CIUDADES_BOLIVIA = [
+    # ── Departamento de Cochabamba (PRIMERO) ──
     "Cochabamba",
-    "Santa Cruz de la Sierra",
-    "La Paz",
-    "El Alto",
-    "Sucre",
-    "Oruro",
-    "Tarija",
-    "Potosí",
-    "Trinidad",
-    "Cobija",
     "Sacaba",
     "Quillacollo",
-    "Montero",
-    "Warnes",
-    "Yacuiba",
-    "Riberalta",
-    "Guayaramerín",
-    "Villazón",
-    "Bermejo",
-    "Camiri",
-    "Tupiza",
     "Colcapirhua",
     "Tiquipaya",
     "Vinto",
     "Punata",
     "Cliza",
+    # ── Departamento de Santa Cruz ──
+    "Santa Cruz de la Sierra",
+    "Montero",
+    "Warnes",
+    "Camiri",
+    # ── Departamento de La Paz ──
+    "La Paz",
+    "El Alto",
+    # ── Departamento de Chuquisaca ──
+    "Sucre",
+    # ── Departamento de Oruro ──
+    "Oruro",
+    # ── Departamento de Tarija ──
+    "Tarija",
+    "Yacuiba",
+    "Bermejo",
+    "Villazón",
+    # ── Departamento de Potosí ──
+    "Potosí",
+    "Tupiza",
+    # ── Departamento de Beni ──
+    "Trinidad",
+    "Riberalta",
+    "Guayaramerín",
+    # ── Departamento de Pando ──
+    "Cobija",
 ]
 
-# Ciudad actual (se actualiza automáticamente al rotar)
+# Ciudad actual (se actualiza automáticamente según progreso)
 CIUDAD = CIUDADES_BOLIVIA[0]
+
+# Archivos de progreso de ciudades
+ARCHIVO_CIUDAD_ACTUAL = "ciudad_actual.txt"
+ARCHIVO_CIUDADES_COMPLETADAS = "ciudades_completadas.csv"
 
 # --- Categorías de negocios (AMPLIADAS) ---
 CATEGORIAS_NEGOCIOS = [

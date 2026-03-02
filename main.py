@@ -34,6 +34,11 @@ from gestor_contactados import (
     marcar_categoria_buscada,
     calcular_faltantes_hoy,
     contar_enviados_hoy,
+    obtener_ciudad_actual,
+    guardar_ciudad_actual,
+    obtener_ciudades_completadas,
+    marcar_ciudad_completada,
+    avanzar_a_siguiente_ciudad,
 )
 import config
 
@@ -132,7 +137,13 @@ def sincronizar_desde_remoto():
 
 def subir_contactados_a_remoto():
     """Sube archivos de contactados al repositorio remoto."""
-    archivos = [config.ARCHIVO_CONTACTADOS, config.ARCHIVO_HISTORICO, config.ARCHIVO_CATEGORIAS_BUSCADAS]
+    archivos = [
+        config.ARCHIVO_CONTACTADOS,
+        config.ARCHIVO_HISTORICO,
+        config.ARCHIVO_CATEGORIAS_BUSCADAS,
+        config.ARCHIVO_CIUDAD_ACTUAL,
+        config.ARCHIVO_CIUDADES_COMPLETADAS,
+    ]
     existentes = [f for f in archivos if os.path.exists(f)]
     if not existentes:
         return
@@ -151,14 +162,22 @@ def subir_contactados_a_remoto():
 
 def elegir_ciudad() -> str:
     """
-    Elige automáticamente la siguiente ciudad para buscar.
-    Rota entre las ciudades de Bolivia basándose en la fecha
-    para distribuir equitativamente.
+    Retorna la ciudad actual para buscar.
+    Sistema SECUENCIAL: se agota una ciudad antes de pasar a la siguiente.
+    Empieza por Cochabamba y avanza por departamentos.
     """
-    dia_del_ano = datetime.now().timetuple().tm_yday
-    hora = datetime.now().hour
-    idx = (dia_del_ano * 3 + hora // 8) % len(config.CIUDADES_BOLIVIA)
-    return config.CIUDADES_BOLIVIA[idx]
+    completadas = obtener_ciudades_completadas()
+    ciudad = obtener_ciudad_actual()
+
+    # Si la ciudad actual ya está completada, avanzar
+    if ciudad in completadas:
+        ciudad = avanzar_a_siguiente_ciudad()
+        if not ciudad:
+            return None  # Todas completadas
+    else:
+        guardar_ciudad_actual(ciudad)
+
+    return ciudad
 
 
 def mostrar_config(ciudad: str, faltantes: int):
@@ -167,16 +186,17 @@ def mostrar_config(ciudad: str, faltantes: int):
     categorias_pendientes = obtener_categorias_pendientes()
     total_cats = len(config.CATEGORIAS_NEGOCIOS)
     cats_pendientes = len(categorias_pendientes)
+    completadas = obtener_ciudades_completadas()
 
     console.print(Panel(
-        f"[cyan]📍 Ciudad:[/cyan] [bold]{ciudad}[/bold]\n"
+        f"[cyan]📍 Ciudad actual:[/cyan] [bold]{ciudad}[/bold]\n"
         f"[cyan]🌐 Código de país:[/cyan] [bold]+{config.CODIGO_PAIS}[/bold]\n"
         f"[cyan]📊 Meta diaria:[/cyan] [bold]{config.MENSAJES_DIARIOS_META}[/bold]\n"
         f"[cyan]✅ Enviados hoy:[/cyan] [bold]{stats['enviados_hoy']}[/bold]\n"
         f"[cyan]📤 Faltan hoy:[/cyan] [bold]{faltantes}[/bold]\n"
         f"[cyan]📂 Categorías pendientes:[/cyan] [bold]{cats_pendientes}/{total_cats}[/bold]\n"
         f"[cyan]📋 Total contactados:[/cyan] [bold]{stats['total_contactados']}[/bold]\n"
-        f"[cyan]🏙️  Ciudades disponibles:[/cyan] [bold]{len(config.CIUDADES_BOLIVIA)}[/bold]",
+        f"[cyan]🏙️  Ciudades completadas:[/cyan] [bold]{len(completadas)}/{len(config.CIUDADES_BOLIVIA)}[/bold]",
         title="⚙️ Configuración",
         border_style="cyan",
     ))
@@ -274,8 +294,16 @@ def main():
     faltantes = calcular_faltantes_hoy()
     enviados_hoy = contar_enviados_hoy()
 
-    # ── Elegir ciudad automáticamente ──
+    # ── Elegir ciudad (secuencial: Cochabamba primero) ──
     ciudad = elegir_ciudad()
+
+    if not ciudad:
+        console.print(Panel(
+            "[bold green]🎉 TODAS LAS CIUDADES DE BOLIVIA COMPLETADAS[/bold green]\n\n"
+            "Todos los negocios sin web han sido contactados.",
+            border_style="green",
+        ))
+        return
 
     mostrar_config(ciudad, faltantes)
 
@@ -290,7 +318,7 @@ def main():
         return
 
     # ── LOOP: Buscar → Enviar → Repetir hasta completar la meta ──
-    MAX_RONDAS = 10  # Evitar loop infinito si no hay negocios
+    MAX_RONDAS = 15  # Suficiente para completar 20 con fallos
     total_enviados_sesion = 0
     total_fallidos_sesion = 0
     ronda = 0
@@ -321,14 +349,21 @@ def main():
         nuevos = busqueda_automatica(ciudad, buscar_cantidad)
 
         if not nuevos:
+            # Ciudad agotada: marcar como completada y avanzar a la siguiente
             console.print(Panel(
-                "[bold yellow]⚠️ NO SE ENCONTRARON NEGOCIOS NUEVOS[/bold yellow]\n\n"
-                "Cambiando de ciudad para la siguiente ronda...",
+                f"[bold yellow]🏙️  CIUDAD AGOTADA: {ciudad}[/bold yellow]\n\n"
+                "Todas las categorías buscadas sin nuevos resultados.\n"
+                "Avanzando a la siguiente ciudad...",
                 border_style="yellow",
             ))
-            # Cambiar a otra ciudad si esta se agotó
-            idx_actual = config.CIUDADES_BOLIVIA.index(ciudad) if ciudad in config.CIUDADES_BOLIVIA else 0
-            ciudad = config.CIUDADES_BOLIVIA[(idx_actual + 1) % len(config.CIUDADES_BOLIVIA)]
+            marcar_ciudad_completada(ciudad)
+            ciudad = avanzar_a_siguiente_ciudad()
+            if not ciudad:
+                console.print(Panel(
+                    "[bold green]🎉 TODAS LAS CIUDADES DE BOLIVIA COMPLETADAS[/bold green]",
+                    border_style="green",
+                ))
+                break
             continue
 
         # ── Guardar prospectos ──
@@ -391,7 +426,7 @@ def main():
         estado_msg = f"[bold green]🎉 META DIARIA COMPLETADA — {total_hoy}/{config.MENSAJES_DIARIOS_META}[/bold green]"
     else:
         estado_msg = (f"[bold yellow]⚠ Meta parcial: {total_hoy}/{config.MENSAJES_DIARIOS_META}[/bold yellow]\n"
-                      f"Se completaron {MAX_RONDAS} rondas. Ejecuta de nuevo si es necesario.")
+                      f"Ejecuta de nuevo para continuar.")
 
     console.print(Panel(
         f"{estado_msg}\n\n"

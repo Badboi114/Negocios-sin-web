@@ -225,3 +225,87 @@ def obtener_categorias_pendientes() -> list[str]:
     buscadas = cargar_categorias_buscadas()
     pendientes = [c for c in config.CATEGORIAS_NEGOCIOS if c not in buscadas]
     return pendientes
+
+
+# ── Gestión de ciudades (progreso secuencial) ──────────────────
+
+
+def obtener_ciudad_actual() -> str:
+    """
+    Lee la ciudad en la que se está trabajando actualmente.
+    Si no existe el archivo, retorna la primera ciudad de la lista.
+    """
+    if os.path.exists(config.ARCHIVO_CIUDAD_ACTUAL):
+        try:
+            with open(config.ARCHIVO_CIUDAD_ACTUAL, "r", encoding="utf-8") as f:
+                ciudad = f.read().strip()
+                if ciudad and ciudad in config.CIUDADES_BOLIVIA:
+                    return ciudad
+        except Exception:
+            pass
+    return config.CIUDADES_BOLIVIA[0]
+
+
+def guardar_ciudad_actual(ciudad: str):
+    """Guarda la ciudad actual en el archivo de progreso."""
+    with open(config.ARCHIVO_CIUDAD_ACTUAL, "w", encoding="utf-8") as f:
+        f.write(ciudad)
+
+
+def obtener_ciudades_completadas() -> set:
+    """Retorna el set de ciudades ya completadas (todas las categorías agotadas)."""
+    if not os.path.exists(config.ARCHIVO_CIUDADES_COMPLETADAS):
+        return set()
+    try:
+        df = pd.read_csv(config.ARCHIVO_CIUDADES_COMPLETADAS, encoding="utf-8-sig")
+        return set(df["Ciudad"].astype(str).str.strip())
+    except Exception:
+        return set()
+
+
+def marcar_ciudad_completada(ciudad: str):
+    """Marca una ciudad como completada (todas las categorías agotadas)."""
+    completadas = []
+    if os.path.exists(config.ARCHIVO_CIUDADES_COMPLETADAS):
+        try:
+            completadas = pd.read_csv(
+                config.ARCHIVO_CIUDADES_COMPLETADAS, encoding="utf-8-sig"
+            ).to_dict("records")
+        except Exception:
+            pass
+
+    completadas.append({
+        "Ciudad": ciudad,
+        "Fecha_Completada": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
+
+    df = pd.DataFrame(completadas)
+    df.drop_duplicates(subset=["Ciudad"], keep="first", inplace=True)
+    df.to_csv(config.ARCHIVO_CIUDADES_COMPLETADAS, index=False, encoding="utf-8-sig")
+    console.print(f"[green]✅ Ciudad '{ciudad}' marcada como COMPLETADA[/green]")
+
+
+def avanzar_a_siguiente_ciudad() -> str | None:
+    """
+    Avanza a la siguiente ciudad no completada.
+    Resetea las categorías buscadas para la nueva ciudad.
+    Retorna la nueva ciudad o None si TODAS están completadas.
+    """
+    completadas = obtener_ciudades_completadas()
+
+    for ciudad in config.CIUDADES_BOLIVIA:
+        if ciudad not in completadas:
+            guardar_ciudad_actual(ciudad)
+            resetear_categorias_buscadas()
+            console.print(f"[bold cyan]🏙️  Avanzando a: {ciudad}[/bold cyan]")
+            return ciudad
+
+    console.print("[bold green]🎉 TODAS LAS CIUDADES DE BOLIVIA COMPLETADAS[/bold green]")
+    return None
+
+
+def resetear_categorias_buscadas():
+    """Borra el archivo de categorías buscadas (se reinicia para la nueva ciudad)."""
+    if os.path.exists(config.ARCHIVO_CATEGORIAS_BUSCADAS):
+        os.remove(config.ARCHIVO_CATEGORIAS_BUSCADAS)
+        console.print("[cyan]🔄 Categorías reiniciadas para nueva ciudad[/cyan]")

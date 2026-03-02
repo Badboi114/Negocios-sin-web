@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Prospección Sin Web
+Comment=Sistema automático de prospección — 20 mensajes/día
+Exec=bash -c 'cd /home/wlujan/Escritorio/SINPAGINASWEBSISTEMA && ./ejecutar.sh; exec bash'
+Terminal=true
+Type=Application
+Icon=utilities-terminal
+Categories=Utility;

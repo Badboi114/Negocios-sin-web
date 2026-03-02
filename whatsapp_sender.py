@@ -9,6 +9,7 @@
 import time
 import random
 import os
+import socket
 from datetime import datetime
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from playwright.sync_api import TimeoutError as PwTimeout
@@ -50,6 +51,30 @@ TEXTOS_BLOQUEO = [
     "couldn't send",
     "failed to send",
 ]
+
+
+def _hay_internet() -> bool:
+    """Verifica si hay conexión a internet."""
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=5)
+        return True
+    except OSError:
+        return False
+
+
+def _esperar_internet(max_espera: int = 600) -> bool:
+    """Espera hasta que vuelva la conexión (máx 10 min por defecto)."""
+    if _hay_internet():
+        return True
+    console.print("[bold red]🔌 Internet perdido durante envío. Esperando reconexión...[/bold red]")
+    inicio = time.time()
+    while time.time() - inicio < max_espera:
+        time.sleep(15)
+        if _hay_internet():
+            console.print("[green]✅ Internet restaurado. Continuando envío...[/green]")
+            return True
+        console.print(f"[yellow]⏳ Sin internet... {int(time.time() - inicio)}s[/yellow]")
+    return False
 
 
 def _pausa_humana(minimo: float, maximo: float, motivo: str = ""):
@@ -168,91 +193,97 @@ def detectar_bloqueo(page: Page) -> bool:
 def enviar_mensaje_individual(page: Page, telefono: str, mensaje: str) -> dict:
     """
     Envía un mensaje a un número específico via WhatsApp Web.
-    
+    Detecta cortes de internet y espera reconexión.
+
     Returns:
         Dict con resultado: {'exito': bool, 'motivo': str}
     """
-    try:
-        import urllib.parse
-        
-        # Usar la URL directa de WhatsApp Web para abrir chat
-        msg_encoded = urllib.parse.quote(mensaje, safe='')
-        url = f"https://web.whatsapp.com/send?phone={telefono}&text={msg_encoded}"
-        
-        page.goto(url, timeout=config.TIMEOUT_PAGINA, wait_until="domcontentloaded")
-        time.sleep(8)  # Esperar a que cargue completamente
-        
-        # Verificar si aparece "Número de teléfono no válido" o similar
+    max_reintentos = 3
+    for intento in range(max_reintentos):
         try:
-            invalido = page.locator('div:has-text("invalid")').or_(
-                page.locator('div:has-text("inválido")')
-            ).or_(
-                page.locator('div:has-text("no está en WhatsApp")')
-            ).or_(
-                page.locator('div:has-text("not on WhatsApp")')
-            ).or_(
-                page.locator('div:has-text("Phone number shared via url is invalid")')
-            )
-            
-            # Buscar el popup/modal de número inválido
-            popup = page.locator('div[data-animate-modal-popup="true"]')
-            if popup.count() > 0:
-                popup_text = popup.inner_text().lower()
-                if "invalid" in popup_text or "inválido" in popup_text or "no está" in popup_text:
-                    # Cerrar popup si hay botón OK
+            import urllib.parse
+
+            # Usar la URL directa de WhatsApp Web para abrir chat
+            msg_encoded = urllib.parse.quote(mensaje, safe='')
+            url = f"https://web.whatsapp.com/send?phone={telefono}&text={msg_encoded}"
+
+            page.goto(url, timeout=config.TIMEOUT_PAGINA, wait_until="domcontentloaded")
+            time.sleep(8)  # Esperar a que cargue completamente
+
+            # Verificar si aparece "Número de teléfono no válido" o similar
+            try:
+                # Buscar el popup/modal de número inválido
+                popup = page.locator('div[data-animate-modal-popup="true"]')
+                if popup.count() > 0:
+                    popup_text = popup.inner_text().lower()
+                    if "invalid" in popup_text or "inválido" in popup_text or "no está" in popup_text:
+                        # Cerrar popup si hay botón OK
+                        try:
+                            ok_btn = popup.locator('div[role="button"]')
+                            if ok_btn.count() > 0:
+                                ok_btn.first.click()
+                        except Exception:
+                            pass
+                        return {"exito": False, "motivo": "Número no tiene WhatsApp"}
+            except Exception:
+                pass
+
+            # Esperar a que aparezca el campo de texto del chat
+            try:
+                input_field = page.locator(
+                    'div[contenteditable="true"][data-tab="10"]'
+                ).or_(
+                    page.locator('div[contenteditable="true"][data-tab="6"]')
+                ).or_(
+                    page.locator('footer div[contenteditable="true"]')
+                )
+
+                input_field.first.wait_for(state="visible", timeout=20000)
+                time.sleep(2)
+
+            except PwTimeout:
+                return {"exito": False, "motivo": "No se pudo abrir el chat (posible número sin WhatsApp)"}
+
+            # El mensaje ya debería estar escrito por la URL, solo enviar
+            try:
+                send_btn = page.locator('button[aria-label="Enviar"]').or_(
+                    page.locator('button[aria-label="Send"]')
+                ).or_(
+                    page.locator('span[data-icon="send"]')
+                )
+
+                if send_btn.count() > 0:
+                    send_btn.first.click()
+                    time.sleep(3)
+                    return {"exito": True, "motivo": "Enviado correctamente"}
+                else:
+                    input_field.first.press("Enter")
+                    time.sleep(3)
+                    return {"exito": True, "motivo": "Enviado (Enter)"}
+
+            except Exception as e:
+                return {"exito": False, "motivo": f"Error al hacer clic en enviar: {e}"}
+
+        except PwTimeout:
+            return {"exito": False, "motivo": "Timeout al cargar WhatsApp Web"}
+        except Exception as e:
+            error_str = str(e)
+            # Detectar corte de internet
+            if "ERR_NAME_NOT_RESOLVED" in error_str or "ERR_INTERNET_DISCONNECTED" in error_str or "ERR_NETWORK_CHANGED" in error_str:
+                console.print(f"  [red]🔌 Internet perdido (intento {intento + 1}/{max_reintentos})[/red]")
+                if _esperar_internet():
+                    # Recargar WhatsApp Web antes de reintentar
                     try:
-                        ok_btn = popup.locator('div[role="button"]')
-                        if ok_btn.count() > 0:
-                            ok_btn.first.click()
+                        page.goto("https://web.whatsapp.com", timeout=config.TIMEOUT_PAGINA)
+                        time.sleep(10)
                     except Exception:
                         pass
-                    return {"exito": False, "motivo": "Número no tiene WhatsApp"}
-        except Exception:
-            pass
-        
-        # Esperar a que aparezca el campo de texto del chat
-        try:
-            input_field = page.locator(
-                'div[contenteditable="true"][data-tab="10"]'
-            ).or_(
-                page.locator('div[contenteditable="true"][data-tab="6"]')
-            ).or_(
-                page.locator('footer div[contenteditable="true"]')
-            )
-            
-            input_field.first.wait_for(state="visible", timeout=20000)
-            time.sleep(2)
-            
-        except PwTimeout:
-            # Si no aparece el campo de texto, el número puede no tener WhatsApp
-            return {"exito": False, "motivo": "No se pudo abrir el chat (posible número sin WhatsApp)"}
-        
-        # El mensaje ya debería estar escrito por la URL, solo enviar
-        # Buscar y hacer clic en el botón de enviar
-        try:
-            send_btn = page.locator('button[aria-label="Enviar"]').or_(
-                page.locator('button[aria-label="Send"]')
-            ).or_(
-                page.locator('span[data-icon="send"]')
-            )
-            
-            if send_btn.count() > 0:
-                send_btn.first.click()
-                time.sleep(3)
-                return {"exito": True, "motivo": "Enviado correctamente"}
-            else:
-                # Intentar enviar con Enter
-                input_field.first.press("Enter")
-                time.sleep(3)
-                return {"exito": True, "motivo": "Enviado (Enter)"}
-                
-        except Exception as e:
-            return {"exito": False, "motivo": f"Error al hacer clic en enviar: {e}"}
-        
-    except PwTimeout:
-        return {"exito": False, "motivo": "Timeout al cargar WhatsApp Web"}
-    except Exception as e:
-        return {"exito": False, "motivo": f"Error inesperado: {e}"}
+                    continue  # Reintentar el envío
+                else:
+                    return {"exito": False, "motivo": "Sin internet — conexión no restaurada"}
+            return {"exito": False, "motivo": f"Error inesperado: {e}"}
+
+    return {"exito": False, "motivo": "Máximo de reintentos alcanzado"}
 
 
 def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:

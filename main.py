@@ -13,6 +13,7 @@ import os
 import sys
 import time
 import random
+import socket
 import subprocess
 import pandas as pd
 from datetime import datetime
@@ -75,6 +76,46 @@ def _run_git(args: list[str], timeout: int = 30) -> bool:
     except Exception as e:
         console.print(f"[yellow]⚠ No se pudo ejecutar git: {e}[/yellow]")
         return False
+
+
+def hay_internet() -> bool:
+    """Verifica si hay conexión a internet intentando conectar a DNS de Google."""
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=5)
+        return True
+    except OSError:
+        return False
+
+
+def esperar_conexion(intervalo: int = 30, max_espera: int = 3600):
+    """
+    Si no hay internet, espera hasta que vuelva la conexión.
+    Reintenta cada `intervalo` segundos, hasta `max_espera` segundos total.
+    Retorna True si la conexión volvió, False si se agotó el tiempo.
+    """
+    if hay_internet():
+        return True
+
+    console.print(Panel(
+        "[bold red]🔌 SIN CONEXIÓN A INTERNET[/bold red]\n\n"
+        f"Reintentando cada {intervalo} segundos...\n"
+        f"Tiempo máximo de espera: {max_espera // 60} minutos",
+        border_style="red",
+    ))
+
+    inicio = time.time()
+    intentos = 0
+    while time.time() - inicio < max_espera:
+        intentos += 1
+        time.sleep(intervalo)
+        if hay_internet():
+            console.print(f"[green]✅ Conexión restaurada (después de {intentos * intervalo}s)[/green]\n")
+            return True
+        minutos = int((time.time() - inicio) / 60)
+        console.print(f"[yellow]⏳ Sin internet... ({minutos}min transcurridos)[/yellow]")
+
+    console.print("[red]❌ No se pudo restaurar la conexión. Abortando.[/red]")
+    return False
 
 
 def sincronizar_desde_remoto():
@@ -222,6 +263,10 @@ def main():
     """Flujo principal 100% automático con loop hasta completar la meta."""
     console.print(BANNER)
 
+    # ── Verificar internet antes de empezar ──
+    if not esperar_conexion():
+        return
+
     # ── Sincronizar ──
     sincronizar_desde_remoto()
 
@@ -252,6 +297,12 @@ def main():
 
     while faltantes > 0 and ronda < MAX_RONDAS:
         ronda += 1
+
+        # Verificar internet antes de cada ronda
+        if not esperar_conexion():
+            console.print("[red]❌ Sin internet. Guardando progreso...[/red]")
+            subir_contactados_a_remoto()
+            break
 
         # Buscar un extra para compensar fallos (~40% fallan por no tener WhatsApp)
         buscar_cantidad = min(faltantes * 2, faltantes + 10)

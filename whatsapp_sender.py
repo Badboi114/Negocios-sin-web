@@ -18,6 +18,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
 
 import config
+from gestor_contactados import guardar_contactado_individual, numero_ya_contactado
 
 console = Console()
 
@@ -30,7 +31,7 @@ PAUSA_ENTRE_MENSAJES_MAX = 120   # Segundos máximo entre mensajes
 MENSAJES_ANTES_PAUSA_LARGA = 5   # Cada N mensajes, pausa larga
 PAUSA_LARGA_MIN = 300            # 5 minutos mínimo de pausa larga
 PAUSA_LARGA_MAX = 600            # 10 minutos máximo de pausa larga
-MAX_MENSAJES_POR_SESION = 20     # Máximo mensajes por sesión antes de parar
+MAX_MENSAJES_POR_SESION = 50     # Máximo mensajes por sesión antes de parar
 PAUSA_ENTRE_SESIONES = 3600      # 1 hora entre sesiones
 
 # Textos que indican bloqueo o limitación
@@ -317,32 +318,42 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
     ))
 
     with sync_playwright() as pw:
-        console.print("\n[cyan]🌐 Abriendo WhatsApp Web...[/cyan]\n")
+        console.print("\n[cyan][WA-1] Abriendo navegador Chromium...[/cyan]")
 
         os.makedirs(WHATSAPP_SESSION_DIR, exist_ok=True)
 
-        context: BrowserContext = pw.chromium.launch_persistent_context(
-            WHATSAPP_SESSION_DIR,
-            headless=False,
-            viewport={"width": 1366, "height": 768},
-            user_agent=config.USER_AGENT,
-            args=[
-                '--disable-blink-features=AutomationControlled',
-                '--no-sandbox',
-            ]
-        )
+        try:
+            context: BrowserContext = pw.chromium.launch_persistent_context(
+                WHATSAPP_SESSION_DIR,
+                headless=False,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--no-sandbox',
+                ]
+            )
+        except Exception as e:
+            console.print(f"[red]❌ Error al abrir navegador: {e}[/red]")
+            console.print("[yellow]   Verifica que Playwright y Chromium estén instalados:[/yellow]")
+            console.print("[yellow]   python3 -m playwright install chromium[/yellow]")
+            return prospectos
+
+        console.print("[green]   OK — Navegador abierto[/green]")
 
         page = context.pages[0] if context.pages else context.new_page()
 
         try:
             # 1. Navegar a WhatsApp Web
+            console.print("[cyan][WA-2] Navegando a web.whatsapp.com...[/cyan]")
             page.goto("https://web.whatsapp.com", timeout=config.TIMEOUT_PAGINA)
+            console.print("[green]   OK — Página cargada[/green]")
 
             # 2. Esperar vinculación automáticamente
+            console.print("[cyan][WA-3] Esperando vinculación con WhatsApp...[/cyan]")
             console.print(Panel(
                 "[bold green]📱 ESPERANDO VINCULACIÓN[/bold green]\n\n"
                 "Si ya estás vinculado, cargará automáticamente.\n"
-                "Si no, escanea el QR con tu teléfono.",
+                "Si no, escanea el QR con tu teléfono.\n\n"
+                "[dim]Tiempo máximo: 5 minutos[/dim]",
                 title="Vinculación",
                 border_style="green",
             ))
@@ -355,26 +366,30 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
                 if vinculado:
                     break
                 if intento > 0 and intento % 6 == 0:
-                    console.print("[yellow]⏳ Esperando vinculación...[/yellow]")
+                    console.print(f"[yellow]   ⏳ Esperando vinculación... ({intento * 5}s)[/yellow]")
 
             if not vinculado:
                 console.print("[red]❌ No se vinculó WhatsApp Web después de 5 minutos.[/red]")
                 context.close()
                 return prospectos
 
-            console.print("\n[bold green]✅ WhatsApp Web vinculado.[/bold green]\n")
+            console.print("[bold green]   ✅ WhatsApp Web VINCULADO correctamente[/bold green]")
             time.sleep(3)
 
             # 3. Verificación final
-            console.print("[cyan]🔒 Verificando conexión...[/cyan]")
+            console.print("[cyan][WA-4] Verificación final de conexión...[/cyan]")
             if not verificar_vinculacion(page):
                 console.print("[red]❌ Verificación final falló.[/red]")
                 context.close()
                 return prospectos
 
-            console.print("[green]✅ Conexión verificada. Iniciando envío...[/green]\n")
+            console.print("[green]   OK — Conexión verificada. Listo para enviar.[/green]\n")
 
             # 4. Enviar mensajes
+            console.print(Panel(
+                f"[bold green]📤 [WA-5] COMENZANDO ENVÍO DE {max_esta_sesion} MENSAJES[/bold green]",
+                border_style="green",
+            ))
             enviados = 0
             fallidos = 0
             bloqueado = False
@@ -408,16 +423,19 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
                 telefono = prospecto.get("Telefono_Limpio", "")
                 mensaje = prospecto.get("Mensaje", "")
 
+                timestamp = datetime.now().strftime("%H:%M:%S")
                 console.print(f"\n[cyan]📤 [{enviados + 1}/{max_esta_sesion}] "
-                              f"Enviando a: [bold]{nombre}[/bold] ({telefono})[/cyan]")
+                              f"({timestamp}) Enviando a: [bold]{nombre}[/bold] ({telefono})[/cyan]")
 
                 # Re-verificar vinculación cada 3 mensajes
                 if enviados > 0 and enviados % 3 == 0:
+                    console.print(f"   [dim]Revalidando vinculación...[/dim]")
                     page.goto("https://web.whatsapp.com", timeout=config.TIMEOUT_PAGINA)
                     time.sleep(5)
                     if not verificar_vinculacion(page):
                         console.print("[red]❌ WhatsApp se desvinculó. Deteniendo.[/red]")
                         break
+                    console.print(f"   [dim]Vinculación OK[/dim]")
 
                 # Enviar
                 resultado = enviar_mensaje_individual(page, telefono, mensaje)
@@ -426,12 +444,16 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
                     prospecto["Estado"] = "Enviado"
                     prospecto["Fecha_Envio"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     enviados += 1
-                    console.print(f"  [green]✅ {resultado['motivo']}[/green]")
+                    console.print(f"  [green]✅ ENVIADO — {resultado['motivo']}[/green]")
+                    # GUARDAR INMEDIATAMENTE
+                    guardar_contactado_individual(prospecto)
                 else:
                     prospecto["Estado"] = f"Fallido: {resultado['motivo']}"
                     prospecto["Fecha_Envio"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     fallidos += 1
-                    console.print(f"  [red]❌ {resultado['motivo']}[/red]")
+                    console.print(f"  [red]❌ FALLIDO — {resultado['motivo']}[/red]")
+                    # Guardar fallido también para no reintentar
+                    guardar_contactado_individual(prospecto)
 
                 # Pausas
                 if enviados < max_esta_sesion:
@@ -449,16 +471,18 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
             # 6. Resumen
             console.print(Panel(
                 f"[bold green]📊 RESUMEN DE ENVÍO[/bold green]\n\n"
-                f"✅ Enviados: {enviados}\n"
-                f"❌ Fallidos: {fallidos}\n"
-                f"⏳ Pendientes: {len([p for p in prospectos if p.get('Estado') == 'Pendiente'])}\n"
-                f"{'🚫 Bloqueo detectado' if bloqueado else '✅ Sin bloqueos'}",
+                f"  ✅ Enviados: {enviados}\n"
+                f"  ❌ Fallidos: {fallidos}\n"
+                f"  ⏳ Pendientes: {len([p for p in prospectos if p.get('Estado') == 'Pendiente'])}\n"
+                f"  {'🚫 Bloqueo detectado' if bloqueado else '✅ Sin bloqueos'}",
                 title="Sesión Finalizada",
                 border_style="green" if not bloqueado else "yellow",
             ))
 
         except Exception as e:
-            console.print(f"[red]❌ Error durante el envío: {e}[/red]")
+            console.print(f"\n[bold red]❌ ERROR DURANTE ENVÍO: {e}[/bold red]")
+            import traceback
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
         finally:
             console.print("\n[cyan]Cerrando navegador...[/cyan]")
             try:

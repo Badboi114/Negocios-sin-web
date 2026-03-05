@@ -13,7 +13,7 @@ from rich.panel import Panel
 
 from whatsapp_sender import iniciar_envio_masivo
 from gestor_contactados import (
-    marcar_como_contactados,
+    guardar_contactados_lote,
     contar_enviados_hoy,
     calcular_faltantes_hoy,
 )
@@ -89,7 +89,7 @@ def main():
 
     # Guardar contactados
     console.print("\n[cyan]📋 Registrando negocios contactados...[/cyan]")
-    marcar_como_contactados(pendientes_enviados)
+    guardar_contactados_lote(pendientes_enviados)
 
     # Actualizar CSV y Excel
     exportar_csv(todos)

@@ -28,7 +28,7 @@ from exportador import exportar_csv, exportar_excel, mostrar_resumen
 from whatsapp_sender import iniciar_envio_masivo
 from gestor_contactados import (
     filtrar_nuevos_prospectos,
-    marcar_como_contactados,
+    guardar_contactado_individual,
     obtener_estadisticas,
     obtener_categorias_pendientes,
     marcar_categoria_buscada,
@@ -55,7 +55,7 @@ BANNER = """
  ║   ✅ Filtra los que NO tienen página web                     ║
  ║   ✅ Genera mensajes personalizados                          ║
  ║   ✅ Nunca contacta el mismo negocio dos veces              ║
- ║   ✅ 100% AUTOMÁTICO — meta: 20 mensajes diarios            ║
+ ║   ✅ 100% AUTOMÁTICO — meta: 50 mensajes diarios            ║
  ║   ✅ Multi-ciudad: toda Bolivia                              ║
  ║                                                              ║
  ╚══════════════════════════════════════════════════════════════╝
@@ -279,22 +279,40 @@ def busqueda_automatica(ciudad: str, limite: int) -> list[dict]:
     return todos_los_prospectos
 
 
+def _log_paso(paso: int, total: int, descripcion: str):
+    """Imprime un paso numerado con formato visible."""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    console.print(f"\n[bold white on blue] PASO {paso}/{total} [/bold white on blue] "
+                  f"[bold cyan]{descripcion}[/bold cyan] "
+                  f"[dim]({timestamp})[/dim]\n")
+
+
 def main():
     """Flujo principal 100% automático con loop hasta completar la meta."""
     console.print(BANNER)
 
-    # ── Verificar internet antes de empezar ──
+    PASOS_TOTAL = 6
+
+    # ── PASO 1: Verificar internet ──
+    _log_paso(1, PASOS_TOTAL, "VERIFICANDO CONEXION A INTERNET")
     if not esperar_conexion():
         return
+    console.print("[green]   OK — Internet disponible[/green]")
 
-    # ── Sincronizar ──
+    # ── PASO 2: Sincronizar ──
+    _log_paso(2, PASOS_TOTAL, "SINCRONIZANDO CON REPOSITORIO REMOTO")
     sincronizar_desde_remoto()
 
-    # ── Calcular cuántos faltan hoy ──
+    # ── PASO 3: Calcular estado del dia ──
+    _log_paso(3, PASOS_TOTAL, "CALCULANDO ESTADO DEL DIA")
     faltantes = calcular_faltantes_hoy()
     enviados_hoy = contar_enviados_hoy()
+    console.print(f"   Enviados hoy: [bold]{enviados_hoy}[/bold]")
+    console.print(f"   Meta diaria:  [bold]{config.MENSAJES_DIARIOS_META}[/bold]")
+    console.print(f"   Faltan:       [bold]{faltantes}[/bold]")
 
-    # ── Elegir ciudad (secuencial: Cochabamba primero) ──
+    # ── PASO 4: Elegir ciudad ──
+    _log_paso(4, PASOS_TOTAL, "ELIGIENDO CIUDAD")
     ciudad = elegir_ciudad()
 
     if not ciudad:
@@ -305,6 +323,7 @@ def main():
         ))
         return
 
+    console.print(f"   Ciudad seleccionada: [bold]{ciudad}[/bold]")
     mostrar_config(ciudad, faltantes)
 
     if faltantes == 0:
@@ -317,8 +336,9 @@ def main():
         ))
         return
 
-    # ── LOOP: Buscar → Enviar → Repetir hasta completar la meta ──
-    MAX_RONDAS = 15  # Suficiente para completar 20 con fallos
+    # ── PASO 5: LOOP PRINCIPAL — Buscar + Enviar ──
+    _log_paso(5, PASOS_TOTAL, f"INICIANDO LOOP PRINCIPAL — META: {config.MENSAJES_DIARIOS_META} MENSAJES")
+    MAX_RONDAS = 30  # Suficiente para completar 50 con fallos
     total_enviados_sesion = 0
     total_fallidos_sesion = 0
     ronda = 0
@@ -326,30 +346,36 @@ def main():
     while faltantes > 0 and ronda < MAX_RONDAS:
         ronda += 1
 
-        # Verificar internet antes de cada ronda
-        if not esperar_conexion():
-            console.print("[red]❌ Sin internet. Guardando progreso...[/red]")
-            subir_contactados_a_remoto()
-            break
-
-        # Buscar un extra para compensar fallos (~40% fallan por no tener WhatsApp)
-        buscar_cantidad = min(faltantes * 2, faltantes + 10)
-
+        timestamp = datetime.now().strftime("%H:%M:%S")
         console.print(Panel(
-            f"[bold green]🔍 RONDA {ronda} — BÚSQUEDA AUTOMÁTICA[/bold green]\n\n"
-            f"Enviados hoy: [bold]{contar_enviados_hoy()}[/bold]\n"
-            f"Faltan: [bold]{faltantes}[/bold] para completar la meta de "
-            f"[bold]{config.MENSAJES_DIARIOS_META}[/bold]\n"
-            f"Buscando: [bold]{buscar_cantidad}[/bold] negocios (extra para compensar fallos)\n"
-            f"Ciudad: [bold]{ciudad}[/bold]",
-            border_style="green",
+            f"[bold white on magenta] RONDA {ronda}/{MAX_RONDAS} [/bold white on magenta]  "
+            f"[dim]({timestamp})[/dim]\n\n"
+            f"  Enviados hoy:     [bold]{contar_enviados_hoy()}[/bold]\n"
+            f"  Faltan:           [bold]{faltantes}[/bold]\n"
+            f"  Ciudad:           [bold]{ciudad}[/bold]\n"
+            f"  Sesión enviados:  [bold green]{total_enviados_sesion}[/bold green]\n"
+            f"  Sesión fallidos:  [bold red]{total_fallidos_sesion}[/bold red]",
+            title=f"Estado de la Ronda {ronda}",
+            border_style="magenta",
         ))
 
-        # ── Buscar ──
+        # 5a. Verificar internet
+        console.print(f"  [cyan][5a] Verificando internet...[/cyan]")
+        if not esperar_conexion():
+            console.print("[red]   ❌ Sin internet. Guardando progreso...[/red]")
+            subir_contactados_a_remoto()
+            break
+        console.print(f"  [green]   OK — Internet disponible[/green]")
+
+        # 5b. Calcular cantidad a buscar
+        buscar_cantidad = min(faltantes * 2, faltantes + 10)
+        console.print(f"  [cyan][5b] Buscando {buscar_cantidad} negocios (extra para compensar fallos de ~40%)...[/cyan]")
+
+        # 5c. BUSCAR negocios en Google Maps
+        console.print(f"  [cyan][5c] ABRIENDO GOOGLE MAPS — Buscando negocios sin web...[/cyan]")
         nuevos = busqueda_automatica(ciudad, buscar_cantidad)
 
         if not nuevos:
-            # Ciudad agotada: marcar como completada y avanzar a la siguiente
             console.print(Panel(
                 f"[bold yellow]🏙️  CIUDAD AGOTADA: {ciudad}[/bold yellow]\n\n"
                 "Todas las categorías buscadas sin nuevos resultados.\n"
@@ -366,34 +392,42 @@ def main():
                 break
             continue
 
-        # ── Guardar prospectos ──
+        console.print(f"  [green]   OK — {len(nuevos)} negocios encontrados[/green]")
+
+        # 5d. Guardar prospectos en CSV/Excel
+        console.print(f"  [cyan][5d] Guardando prospectos en CSV y Excel...[/cyan]")
         exportar_csv(nuevos)
         exportar_excel(nuevos)
-
-        console.print(Panel(
-            f"[bold green]📊 {len(nuevos)} NEGOCIOS ENCONTRADOS[/bold green]\n"
-            f"Ciudad: [bold]{ciudad}[/bold]",
-            border_style="green",
-        ))
         mostrar_resumen(nuevos)
 
-        # ── Enviar por WhatsApp (automático) ──
+        # 5e. ENVIAR por WhatsApp
         console.print(Panel(
-            f"[bold cyan]📤 ENVIANDO {len(nuevos)} MENSAJES POR WHATSAPP[/bold cyan]\n\n"
+            f"[bold cyan]📤 [5e] ENVIANDO {len(nuevos)} MENSAJES POR WHATSAPP[/bold cyan]\n\n"
             f"100% automático. Si no hay sesión activa,\n"
-            f"escanea el QR cuando aparezca en el navegador.",
+            f"escanea el QR cuando aparezca en el navegador.\n\n"
+            f"[dim]Cada mensaje tiene pausa de 45-120s para evitar bloqueos.[/dim]",
             border_style="cyan",
         ))
 
-        nuevos = iniciar_envio_masivo(nuevos) or nuevos
+        resultado_envio = iniciar_envio_masivo(nuevos)
+        if resultado_envio is not None:
+            nuevos = resultado_envio
 
-        # ── Guardar contactados ──
-        console.print("\n[cyan]📋 Registrando contactados...[/cyan]")
-        marcar_como_contactados(nuevos)
+        # 5f. Guardar contactados
+        console.print(f"  [cyan][5f] Registrando contactados en historial...[/cyan]")
+        guardados = 0
+        for p in nuevos:
+            try:
+                guardar_contactado_individual(p)
+                guardados += 1
+            except Exception as e:
+                console.print(f"  [red]   Error guardando {p.get('Nombre', '?')}: {e}[/red]")
+        console.print(f"  [green]   OK — {guardados} contactos registrados[/green]")
+
         exportar_csv(nuevos)
         exportar_excel(nuevos)
 
-        # ── Contar resultados de esta ronda ──
+        # 5g. Contar resultados
         enviados_ronda = len([p for p in nuevos if p.get("Estado") == "Enviado"])
         fallidos_ronda = len([p for p in nuevos if str(p.get("Estado", "")).startswith("Fallido")])
         total_enviados_sesion += enviados_ronda
@@ -401,25 +435,32 @@ def main():
 
         console.print(Panel(
             f"[cyan]📊 RONDA {ronda} COMPLETADA[/cyan]\n\n"
-            f"✅ Enviados esta ronda: {enviados_ronda}\n"
-            f"❌ Fallidos esta ronda: {fallidos_ronda}",
+            f"  ✅ Enviados esta ronda:   {enviados_ronda}\n"
+            f"  ❌ Fallidos esta ronda:   {fallidos_ronda}\n"
+            f"  ────────────────────────\n"
+            f"  📈 Total sesión enviados: {total_enviados_sesion}\n"
+            f"  📈 Total sesión fallidos: {total_fallidos_sesion}",
             border_style="cyan",
         ))
 
-        # ── Subir al repositorio después de cada ronda ──
+        # 5h. Subir al repositorio
+        console.print(f"  [cyan][5h] Subiendo progreso al repositorio...[/cyan]")
         subir_contactados_a_remoto()
 
-        # ── Recalcular faltantes ──
+        # 5i. Recalcular faltantes
         faltantes = calcular_faltantes_hoy()
+        console.print(f"  [cyan][5i] Faltantes recalculados: [bold]{faltantes}[/bold][/cyan]")
 
         if faltantes > 0:
-            console.print(f"\n[yellow]⏳ Faltan {faltantes} mensajes. "
-                          f"Iniciando nueva ronda de búsqueda...[/yellow]\n")
             pausa = random.uniform(10, 20)
-            console.print(f"[dim]Pausa de {pausa:.0f}s antes de la siguiente ronda...[/dim]")
+            console.print(f"\n  [yellow]⏳ Faltan {faltantes} mensajes. "
+                          f"Pausa de {pausa:.0f}s antes de siguiente ronda...[/yellow]")
             time.sleep(pausa)
+        else:
+            console.print(f"\n  [bold green]🎉 META COMPLETADA — No faltan mas mensajes[/bold green]")
 
-    # ── Resumen final ──
+    # ── PASO 6: Resumen final ──
+    _log_paso(6, PASOS_TOTAL, "RESUMEN FINAL")
     total_hoy = contar_enviados_hoy()
 
     if faltantes == 0:
@@ -430,11 +471,12 @@ def main():
 
     console.print(Panel(
         f"{estado_msg}\n\n"
-        f"✅ Enviados esta sesión: {total_enviados_sesion}\n"
-        f"❌ Fallidos esta sesión: {total_fallidos_sesion}\n"
-        f"🔄 Rondas ejecutadas: {ronda}\n"
-        f"🏙️  Ciudad: {ciudad}\n"
-        f"📁 Archivos: {config.ARCHIVO_CSV}, {config.ARCHIVO_HISTORICO}",
+        f"  ✅ Enviados esta sesión: {total_enviados_sesion}\n"
+        f"  ❌ Fallidos esta sesión: {total_fallidos_sesion}\n"
+        f"  🔄 Rondas ejecutadas:   {ronda}\n"
+        f"  🏙️  Ciudad:              {ciudad}\n"
+        f"  📁 Archivos: {config.ARCHIVO_CSV}, {config.ARCHIVO_HISTORICO}",
+        title="SESION FINALIZADA",
         border_style="green",
     ))
 

@@ -2,6 +2,10 @@
 # gestor_contactados.py — Gestiona la lista de negocios
 #                         ya contactados (anti-duplicados)
 # ============================================================
+# REGLA DE ORO: Un número se guarda en contactados.csv
+# INMEDIATAMENTE después de enviarle mensaje exitosamente.
+# Nunca se espera al final del proceso.
+# ============================================================
 
 import os
 import pandas as pd
@@ -12,48 +16,81 @@ import config
 
 console = Console()
 
+# Cache en memoria para no leer el archivo cada vez
+_cache_contactados: set | None = None
 
-def cargar_contactados() -> set:
+
+def cargar_contactados(silencioso: bool = False) -> set:
     """
     Carga la lista de teléfonos ya contactados.
+    Usa cache en memoria para evitar lecturas repetidas.
     
     Returns:
         Set con los teléfonos que YA fueron contactados.
     """
+    global _cache_contactados
+    
+    if _cache_contactados is not None:
+        return _cache_contactados
+    
     if not os.path.exists(config.ARCHIVO_CONTACTADOS):
-        return set()
+        _cache_contactados = set()
+        return _cache_contactados
     
     try:
         df = pd.read_csv(config.ARCHIVO_CONTACTADOS, encoding='utf-8-sig')
-        telefónos = set(df['Telefono_Limpio'].astype(str).str.strip())
-        console.print(f"[cyan]📋 {len(telefónos)} negocios ya contactados (historial cargado)[/cyan]")
-        return telefónos
+        _cache_contactados = set(df['Telefono_Limpio'].astype(str).str.strip())
+        if not silencioso:
+            console.print(f"[cyan]📋 {len(_cache_contactados)} negocios ya contactados (historial cargado)[/cyan]")
+        return _cache_contactados
     except Exception as e:
         console.print(f"[yellow]⚠ Error cargando historial: {e}[/yellow]")
-        return set()
+        _cache_contactados = set()
+        return _cache_contactados
+
+
+def numero_ya_contactado(telefono: str) -> bool:
+    """
+    Verifica si un número ya fue contactado.
+    """
+    contactados = cargar_contactados(silencioso=True)
+    return str(telefono).strip() in contactados
 
 
 def filtrar_nuevos_prospectos(prospectos: list[dict]) -> list[dict]:
     """
     Filtra los prospectos para excluir los que YA fueron contactados.
-    
-    Args:
-        prospectos: Lista de prospectos encontrados.
-    
-    Returns:
-        Lista de prospectos que NO han sido contactados aún.
+    Filtra por teléfono Y por nombre para mayor seguridad.
     """
     contactados = cargar_contactados()
     
+    # También cargar nombres ya contactados
+    nombres_contactados = set()
+    if os.path.exists(config.ARCHIVO_CONTACTADOS):
+        try:
+            df = pd.read_csv(config.ARCHIVO_CONTACTADOS, encoding='utf-8-sig')
+            nombres_contactados = set(df['Nombre'].astype(str).str.strip().str.lower())
+        except Exception:
+            pass
+    
     nuevos = []
     duplicados = 0
+    telefonos_en_lote = set()  # Para evitar duplicados dentro del mismo lote
     
     for p in prospectos:
         tel = str(p.get("Telefono_Limpio", "")).strip()
-        if tel not in contactados:
-            nuevos.append(p)
-        else:
+        nombre = str(p.get("Nombre", "")).strip().lower()
+        
+        # Verificar: teléfono ya contactado, nombre ya contactado, o duplicado en este lote
+        if tel in contactados:
             duplicados += 1
+        elif tel in telefonos_en_lote:
+            duplicados += 1
+        elif nombre and nombre in nombres_contactados:
+            duplicados += 1
+        else:
+            nuevos.append(p)
+            telefonos_en_lote.add(tel)
     
     if duplicados > 0:
         console.print(f"[yellow]⚠ {duplicados} prospectos descartados (ya contactados)[/yellow]")
@@ -61,25 +98,24 @@ def filtrar_nuevos_prospectos(prospectos: list[dict]) -> list[dict]:
     return nuevos
 
 
-def marcar_como_contactados(prospectos: list[dict]):
+def guardar_contactado_individual(prospecto: dict):
     """
-    Guarda TODOS los prospectos procesados (enviados Y fallidos) en el historial
-    para no volver a contactarlos. También agrega al archivo histórico para auditoría.
+    Guarda UN prospecto procesado (enviado o fallido) en el historial
+    para no volver a contactarlo. También agrega al archivo histórico.
 
     Args:
-        prospectos: Lista de prospectos procesados (cualquier estado excepto Pendiente).
+        prospecto: Diccionario con datos de un prospecto procesado.
     """
-    # Guardar tanto enviados como fallidos para no reintentar
-    procesados = [
-        p for p in prospectos
-        if p.get("Estado") and p.get("Estado") != "Pendiente"
-    ]
+    global _cache_contactados
 
-    if not procesados:
+    # Solo guardar si fue procesado (no pendiente)
+    estado = prospecto.get("Estado", "")
+    if not estado or estado == "Pendiente":
         return
 
-    enviados = [p for p in procesados if p.get("Estado") == "Enviado"]
-    fallidos = [p for p in procesados if str(p.get("Estado", "")).startswith("Fallido")]
+    telefono = str(prospecto.get("Telefono_Limpio", "")).strip()
+    if not telefono:
+        return
 
     # 1. Agregar a CONTACTADOS (para no volver a contactar)
     contactados_existentes = []
@@ -92,24 +128,27 @@ def marcar_como_contactados(prospectos: list[dict]):
         except Exception:
             pass
 
-    # Agregar todos los procesados (enviados + fallidos)
-    for p in procesados:
-        contactados_existentes.append({
-            "Nombre": p.get("Nombre", ""),
-            "Telefono_Limpio": p.get("Telefono_Limpio", ""),
-            "Fecha_Contacto": p.get("Fecha_Envio", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            "Estado": p.get("Estado", ""),
-        })
+    contactados_existentes.append({
+        "Nombre": prospecto.get("Nombre", ""),
+        "Telefono_Limpio": telefono,
+        "Fecha_Contacto": prospecto.get("Fecha_Envio", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        "Estado": estado,
+    })
 
-    # Guardar contactados
     df = pd.DataFrame(contactados_existentes)
+    df['Telefono_Limpio'] = df['Telefono_Limpio'].astype(str)
     df.drop_duplicates(subset=['Telefono_Limpio'], keep='first', inplace=True)
     df.to_csv(config.ARCHIVO_CONTACTADOS, index=False, encoding='utf-8-sig')
 
-    if enviados:
-        console.print(f"[green]✅ {len(enviados)} contactos enviados guardados en historial[/green]")
-    if fallidos:
-        console.print(f"[yellow]⚠ {len(fallidos)} contactos fallidos registrados (no se reintentarán)[/yellow]")
+    # Actualizar cache en memoria
+    if _cache_contactados is not None:
+        _cache_contactados.add(telefono)
+
+    es_enviado = estado == "Enviado"
+    if es_enviado:
+        console.print(f"  [green]📋 Guardado en historial: {prospecto.get('Nombre', '?')}[/green]")
+    else:
+        console.print(f"  [yellow]📋 Registrado como fallido: {prospecto.get('Nombre', '?')}[/yellow]")
 
     # 2. Agregar al archivo histórico (auditoría)
     historico_existente = []
@@ -122,18 +161,30 @@ def marcar_como_contactados(prospectos: list[dict]):
         except Exception:
             pass
 
-    for p in procesados:
-        historico_existente.append({
-            "Fecha_Envio": p.get("Fecha_Envio", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            "Nombre": p.get("Nombre", ""),
-            "Telefono": p.get("Telefono_Limpio", ""),
-            "Categoria": p.get("Categoria", ""),
-            "Estado": p.get("Estado", ""),
-        })
+    historico_existente.append({
+        "Fecha_Envio": prospecto.get("Fecha_Envio", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        "Nombre": prospecto.get("Nombre", ""),
+        "Telefono": telefono,
+        "Categoria": prospecto.get("Categoria", ""),
+        "Estado": estado,
+    })
 
     df_historico = pd.DataFrame(historico_existente)
     df_historico.drop_duplicates(subset=['Telefono'], keep='first', inplace=True)
     df_historico.to_csv(config.ARCHIVO_HISTORICO, index=False, encoding='utf-8-sig')
+
+
+def guardar_contactados_lote(prospectos: list[dict]):
+    """
+    Guarda una lista de prospectos procesados en el historial.
+    Wrapper para guardar varios de una vez.
+    """
+    procesados = [
+        p for p in prospectos
+        if p.get("Estado") and p.get("Estado") != "Pendiente"
+    ]
+    for p in procesados:
+        guardar_contactado_individual(p)
 
 
 def contar_enviados_hoy() -> int:
@@ -171,6 +222,8 @@ def obtener_estadisticas() -> dict:
     """
     Retorna estadísticas de contactos.
     """
+    global _cache_contactados
+    _cache_contactados = None  # Forzar recarga
     contactados = cargar_contactados()
     enviados_hoy = contar_enviados_hoy()
     faltantes_hoy = calcular_faltantes_hoy()

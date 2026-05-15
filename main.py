@@ -216,7 +216,7 @@ def busqueda_automatica(ciudad: str, limite: int) -> list[dict]:
         console.print("[yellow]⚠ Todas las categorías buscadas. Reiniciando...[/yellow]")
         categorias = list(config.CATEGORIAS_NEGOCIOS)
 
-    random.shuffle(categorias)
+    # NO hacer shuffle - respetar el orden de prioridad definido en config.py
     total_categorias = len(categorias)
 
     console.print(f"\n[bold yellow]🚀 BÚSQUEDA AUTOMÁTICA: {limite} negocios en {ciudad}[/bold yellow]")

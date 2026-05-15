@@ -26,13 +26,13 @@ console = Console()
 WHATSAPP_SESSION_DIR = os.path.join(os.path.dirname(__file__), "whatsapp_session")
 
 # --- Configuración de pausas anti-bloqueo ---
-PAUSA_ENTRE_MENSAJES_MIN = 45    # Segundos mínimo entre mensajes
-PAUSA_ENTRE_MENSAJES_MAX = 120   # Segundos máximo entre mensajes
-MENSAJES_ANTES_PAUSA_LARGA = 5   # Cada N mensajes, pausa larga
-PAUSA_LARGA_MIN = 60             # 1 minuto mínimo de pausa larga
-PAUSA_LARGA_MAX = 60             # 1 minuto máximo de pausa larga
-MAX_MENSAJES_POR_SESION = 50     # Máximo mensajes por sesión antes de parar
-PAUSA_ENTRE_SESIONES = 3600      # 1 hora entre sesiones
+PAUSA_ENTRE_MENSAJES_MIN = 30    # Segundos mínimo entre mensajes (30s)
+PAUSA_ENTRE_MENSAJES_MAX = 90    # Segundos máximo entre mensajes (1:30)
+MENSAJES_ANTES_PAUSA_LARGA = 999 # Desactivado - sin pausas largas
+PAUSA_LARGA_MIN = 90             # Igual a pausa normal (no se usa)
+PAUSA_LARGA_MAX = 90             # Igual a pausa normal (no se usa)
+MAX_MENSAJES_POR_SESION = 39     # Máximo 39 mensajes por día
+PAUSA_ENTRE_SESIONES = 86400     # 24 horas entre sesiones (1 día)
 
 # Textos que indican bloqueo o limitación
 TEXTOS_BLOQUEO = [
@@ -157,30 +157,33 @@ def verificar_vinculacion(page: Page) -> bool:
 def detectar_bloqueo(page: Page) -> bool:
     """
     Detecta si WhatsApp ha limitado o bloqueado el envío de mensajes.
+    SOLO detecta bloqueos REALES, no falsos positivos.
     
     Returns:
-        True si se detectó un bloqueo/limitación.
+        True si se detectó un bloqueo/limitación REAL.
     """
     try:
-        # Obtener todo el texto visible en la página
-        body_text = page.locator('body').inner_text().lower()
-        
-        for texto in TEXTOS_BLOQUEO:
-            if texto.lower() in body_text:
-                console.print(f"\n[bold red]🚫 ALERTA: Se detectó posible bloqueo ({texto})[/bold red]")
-                return True
-        
-        # También verificar si aparecen pop-ups de error
+        # Solo verificar pop-ups de error VISIBLES
         try:
             popups = page.locator('[role="alert"]').or_(
                 page.locator('.popup-container')
             ).or_(
                 page.locator('[data-animate-modal-popup="true"]')
             )
-            if popups.count() > 0:
+            if popups.count() > 0 and popups.first.is_visible():
                 popup_text = popups.first.inner_text().lower()
-                for texto in TEXTOS_BLOQUEO:
-                    if texto.lower() in popup_text:
+                # Solo detectar bloqueos EXPLÍCITOS
+                bloqueos_reales = [
+                    "too many messages",
+                    "demasiados mensajes",
+                    "temporarily banned",
+                    "temporalmente bloqueado",
+                    "account restricted",
+                    "cuenta restringida",
+                ]
+                for texto in bloqueos_reales:
+                    if texto in popup_text:
+                        console.print(f"\n[bold red]🚫 BLOQUEO REAL DETECTADO: {texto}[/bold red]")
                         return True
         except Exception:
             pass
@@ -188,6 +191,7 @@ def detectar_bloqueo(page: Page) -> bool:
     except Exception:
         pass
     
+    # NO hay bloqueo
     return False
 
 
@@ -414,22 +418,18 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
                     console.print(f"\n[yellow]⚠ Límite de sesión alcanzado: {max_esta_sesion}[/yellow]")
                     break
 
-                # Verificar bloqueo
+                # Verificar bloqueo - SI HAY BLOQUEO, DETENER INMEDIATAMENTE
                 if detectar_bloqueo(page):
                     bloqueado = True
                     console.print(Panel(
-                        "[bold red]🚫 BLOQUEO DETECTADO[/bold red]\n\n"
-                        f"Se pausa {PAUSA_ENTRE_SESIONES//60} minutos...\n"
-                        f"Enviados hasta ahora: {enviados}",
+                        "[bold red]🚫 BLOQUEO REAL DETECTADO[/bold red]\n\n"
+                        f"Se detiene el envío por hoy.\n"
+                        f"Enviados hasta ahora: {enviados}\n"
+                        f"Los mensajes pendientes se enviarán mañana.",
                         border_style="red",
                     ))
-                    _pausa_humana(PAUSA_ENTRE_SESIONES, PAUSA_ENTRE_SESIONES + 600, "Pausa por bloqueo")
-                    page.goto("https://web.whatsapp.com", timeout=config.TIMEOUT_PAGINA)
-                    time.sleep(10)
-                    if detectar_bloqueo(page):
-                        console.print("[red]❌ Bloqueo persiste. Deteniendo.[/red]")
-                        break
-                    bloqueado = False
+                    # DETENER INMEDIATAMENTE - no pausar, no reintentar
+                    break
 
                 nombre = prospecto.get("Nombre", "???")
                 telefono = prospecto.get("Telefono_Limpio", "")
@@ -499,13 +499,9 @@ def iniciar_envio_masivo(prospectos: list[dict]) -> list[dict]:
                 if _sin_whatsapp:
                     console.print("  [dim]⚡ Sin pausa (número sin WhatsApp)[/dim]")
                 elif enviados < max_esta_sesion:
-                    if enviados > 0 and enviados % MENSAJES_ANTES_PAUSA_LARGA == 0:
-                        console.print(f"\n[yellow]⏸  Pausa larga (cada {MENSAJES_ANTES_PAUSA_LARGA} mensajes)...[/yellow]")
-                        _pausa_humana(PAUSA_LARGA_MIN, PAUSA_LARGA_MAX,
-                                      f"Pausa seguridad ({PAUSA_LARGA_MIN//60}-{PAUSA_LARGA_MAX//60} min)")
-                    else:
-                        _pausa_humana(PAUSA_ENTRE_MENSAJES_MIN, PAUSA_ENTRE_MENSAJES_MAX,
-                                      "Pausa entre mensajes")
+                    # Pausa simple entre mensajes: máximo 1:30
+                    _pausa_humana(PAUSA_ENTRE_MENSAJES_MIN, PAUSA_ENTRE_MENSAJES_MAX,
+                                  "Pausa entre mensajes")
 
             # 5. Sesión preservada
             console.print("\n[cyan]📱 Sesión de WhatsApp preservada.[/cyan]")

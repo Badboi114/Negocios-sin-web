@@ -8,7 +8,7 @@ CODIGO_PAIS = "591"
 # --- META DIARIA DE MENSAJES ---
 # El sistema completará esta cantidad cada vez que se ejecute,
 # descontando los que ya se enviaron hoy.
-MENSAJES_DIARIOS_META = 35
+MENSAJES_DIARIOS_META = 39
 
 # --- Cantidad de negocios a buscar por cada categoría ---
 CANTIDAD_POR_CATEGORIA = 5
@@ -60,50 +60,74 @@ CIUDAD = CIUDADES_BOLIVIA[0]
 ARCHIVO_CIUDAD_ACTUAL = "ciudad_actual.txt"
 ARCHIVO_CIUDADES_COMPLETADAS = "ciudades_completadas.csv"
 
-# --- Categorías de negocios (AMPLIADAS) ---
+# --- Categorías de negocios (PRIORIZADAS) ---
+# PRIMERO: Peluquerías, Licorerías y Locales de Comida en TODA BOLIVIA
+# DESPUÉS: Resto de negocios
 CATEGORIAS_NEGOCIOS = [
-    # Gastronomía
-    "Restaurantes", "Pizzerías", "Cafeterías", "Panaderías",
-    "Heladerías", "Pastelerías", "Pollerías", "Comida rápida",
-    "Churrasquerías", "Cevicherías", "Comida china", "Comida mexicana",
-    "Comida japonesa", "Salteñerías", "Hamburgeserías", "Snacks",
-    "Juguerías", "Açaí", "Food trucks", "Catering",
-    # Belleza y cuidado personal
-    "Peluquerías", "Barberías", "Salones de belleza", "Spa",
-    "Centros de masajes", "Manicure y pedicure", "Centros de estética",
-    "Depilación", "Tatuajes", "Maquillaje profesional",
-    # Salud
-    "Dentistas", "Consultorios médicos", "Clínicas veterinarias",
-    "Farmacias", "Ópticas", "Fisioterapia", "Nutricionistas",
-    "Psicólogos", "Laboratorios clínicos", "Consultorios oftalmológicos",
-    # Servicios profesionales
-    "Abogados", "Contadores", "Arquitectos", "Ingenieros civiles",
-    "Notarías", "Consultoras", "Agencias de publicidad",
-    "Diseñadores gráficos", "Traductores", "Agentes de seguros",
+    # ═══════════════════════════════════════════════════════════
+    # MÁXIMA PRIORIDAD - ESTOS PRIMERO EN TODA BOLIVIA
+    # ═══════════════════════════════════════════════════════════
+    
+    # 1. PELUQUERÍAS Y BARBERÍAS
+    "Peluquerías", "Barberías", "Salones de belleza",
+    
+    # 2. LICORERÍAS
+    "Licorerías", "Distribuidoras de bebidas", "Vinotecas",
+    
+    # 3. LOCALES DE COMIDA
+    "Pizzerías", "Hamburgeserías", "Heladerías", "Comida rápida",
+    "Restaurantes", "Pollerías", "Churrasquerías", "Salteñerías",
+    "Snacks", "Cafeterías", "Juguerías", "Cevicherías",
+    "Panaderías", "Pastelerías", "Food trucks", "Açaí",
+    "Comida china", "Comida mexicana", "Comida japonesa", "Catering",
+    
+    # ═══════════════════════════════════════════════════════════
+    # PRIORIDAD SECUNDARIA - DESPUÉS DE COMPLETAR LAS ANTERIORES
+    # ═══════════════════════════════════════════════════════════
+    
+    # Belleza y cuidado personal (resto)
+    "Spa", "Centros de masajes", "Manicure y pedicure", 
+    "Centros de estética", "Depilación", "Tatuajes", "Maquillaje profesional",
+    
     # Comercio
     "Tiendas de ropa", "Zapaterías", "Joyerías", "Librerías",
     "Floristerías", "Jugueterías", "Mueblerías", "Electrodomésticos",
-    "Ferreterías", "Papelerías", "Licorerías", "Minimarkets",
+    "Ferreterías", "Papelerías", "Minimarkets",
     "Tiendas de celulares", "Tiendas de computadoras", "Ópticas",
     "Tiendas de mascotas", "Tiendas deportivas", "Tiendas de bicicletas",
     "Perfumerías", "Tiendas de cosméticos", "Bazares",
     "Tiendas de telas", "Mercerías",
+    
+    # Salud
+    "Dentistas", "Consultorios médicos", "Clínicas veterinarias",
+    "Farmacias", "Fisioterapia", "Nutricionistas",
+    "Psicólogos", "Laboratorios clínicos", "Consultorios oftalmológicos",
+    
     # Servicios técnicos
     "Talleres mecánicos", "Electricistas", "Plomeros", "Cerrajerías",
     "Carpinterías", "Tornerías", "Vidrerías", "Tapicerías",
     "Reparación de celulares", "Reparación de computadoras",
     "Reparación de electrodomésticos", "Soldaduras", "Pintores",
     "Alarmas y seguridad", "Aire acondicionado",
+    
+    # Servicios profesionales
+    "Abogados", "Contadores", "Arquitectos", "Ingenieros civiles",
+    "Notarías", "Consultoras", "Agencias de publicidad",
+    "Diseñadores gráficos", "Traductores", "Agentes de seguros",
+    
     # Educación
     "Academias", "Escuelas de manejo", "Institutos de idiomas",
     "Guarderías", "Centros de tutorías", "Academias de música",
     "Academias de baile", "Academias de cocina",
+    
     # Turismo y hospedaje
     "Hoteles", "Hostales", "Alojamientos", "Agencias de viaje",
     "Rent a car", "Transporte turístico",
+    
     # Construcción e inmobiliaria
     "Constructoras", "Inmobiliarias", "Corralones",
     "Pisos y cerámicas", "Pinturerías", "Materiales de construcción",
+    
     # Otros servicios
     "Imprentas", "Estudios fotográficos", "Lavanderías",
     "Tintorería", "Fumigación", "Mudanzas", "Limpieza profesional",
@@ -131,23 +155,21 @@ TIMEOUT_ELEMENTO = 15000
 
 # --- Plantilla del mensaje personalizado ---
 PLANTILLA_MENSAJE = (
-    "Estimados {nombre_negocio}, un cordial saludo.\n\n"
+    "Estimados *{nombre_negocio}*, un cordial saludo.\n\n"
     "Me pongo en contacto con ustedes tras encontrar su ubicación a través de Google Maps:\n"
     "📍 {link_maps}\n\n"
-    "He notado que actualmente no cuentan con un sitio web. Me gustaría poner a su disposición "
-    "mis servicios para el desarrollo de una página web profesional, ideal para proyectar una "
-    "mejor imagen de su negocio a sus clientes.\n\n"
-    "El servicio incluye:\n"
-    "✅ *Diseño moderno y responsivo:* Completamente adaptado para verse bien en celulares y computadoras.\n"
-    "✅ *Presencia digital:* Su página estará publicada, activa y accesible en internet a través de un enlace directo.\n"
-    "✅ *Catálogo integrado:* Una sección dedicada a mostrar sus productos o servicios de forma atractiva.\n"
-    "✅ *Contacto ágil:* Botón de redirección directa para que los clientes les escriban a WhatsApp.\n"
-    "✅ *Gestión técnica:* El servicio incluye la subida a internet y la configuración del alojamiento (hosting).\n\n"
-    "👔 *Promoción Especial por el Mes del Padre:* Para apoyar a los negocios durante este mes, "
-    "estoy ofreciendo la creación y configuración completa de la página por un pago único promocional de *200 Bs*.\n\n"
-    "¿Me permitirían enviarles algunos ejemplos de mi trabajo sin ningún tipo de compromiso? "
-    "Quedo atento a su respuesta.\n\n"
-    "Atentamente, William Lujan Arispe"
+    "Les contacto para proponerles llevar su negocio al siguiente nivel con una tienda virtual propia o una página web.\n\n"
+    "Para que tengan una idea clara, el desarrollo completo se divide en dos partes y estos son los precios base:\n\n"
+    "📱 *1. La página para sus clientes*\n"
+    "Es lo que ven sus compradores: el catálogo, información de contacto y la sección para hacer pedidos.\n"
+    "*(Costo: 250 a 500 Bs)*\n\n"
+    "⚙️ *2. Su panel de administrador*\n"
+    "Es su sistema interno para subir productos, gestionar el catálogo y controlar toda la información de la página.\n"
+    "*(Costo: 500 a 750 Bs)*\n\n"
+    "💡 Si solo están interesados en tener presencia online, pueden adquirir únicamente la página web para que los clientes vean su negocio y su información, sin la necesidad del panel administrador.\n\n"
+    "¿Les interesaría que lo charlemos sin compromiso?\n\n"
+    "Atentamente,\n"
+    "William Lujan Arispe"
 )
 
 # --- Archivo de salida ---

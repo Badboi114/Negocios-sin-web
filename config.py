@@ -13,11 +13,23 @@ MENSAJES_DIARIOS_META = 50
 # --- Cantidad de negocios a buscar por cada categoría ---
 CANTIDAD_POR_CATEGORIA = 5
 
-# --- Ciudades de Bolivia (SECUENCIAL: se agota una antes de pasar a la siguiente) ---
-# Primero TODO el departamento de Cochabamba, luego otros departamentos.
+# --- Ciudades de Bolivia (SECUENCIAL: cobertura nacional primero) ---
+# Se recorre Bolivia de forma amplia primero (capitales/ciudades troncales),
+# luego ciudades adicionales por departamento.
 CIUDADES_BOLIVIA = [
-    # ── Departamento de Cochabamba (PRIMERO) ──
+    # ── Cobertura nacional primero (una por departamento) ──
     "Cochabamba",
+    "Santa Cruz de la Sierra",
+    "La Paz",
+    "Sucre",
+    "Oruro",
+    "Potosí",
+    "Tarija",
+    "Trinidad",
+    "Cobija",
+
+    # ── Cobertura adicional por departamento ──
+    # Cochabamba
     "Sacaba",
     "Quillacollo",
     "Colcapirhua",
@@ -25,32 +37,21 @@ CIUDADES_BOLIVIA = [
     "Vinto",
     "Punata",
     "Cliza",
-    # ── Departamento de Santa Cruz ──
-    "Santa Cruz de la Sierra",
+    # Santa Cruz
     "Montero",
     "Warnes",
     "Camiri",
-    # ── Departamento de La Paz ──
-    "La Paz",
+    # La Paz
     "El Alto",
-    # ── Departamento de Chuquisaca ──
-    "Sucre",
-    # ── Departamento de Oruro ──
-    "Oruro",
-    # ── Departamento de Tarija ──
-    "Tarija",
+    # Tarija
     "Yacuiba",
     "Bermejo",
     "Villazón",
-    # ── Departamento de Potosí ──
-    "Potosí",
+    # Potosí
     "Tupiza",
-    # ── Departamento de Beni ──
-    "Trinidad",
+    # Beni
     "Riberalta",
     "Guayaramerín",
-    # ── Departamento de Pando ──
-    "Cobija",
 ]
 
 # Ciudad actual (se actualiza automáticamente según progreso)
@@ -61,7 +62,7 @@ ARCHIVO_CIUDAD_ACTUAL = "ciudad_actual.txt"
 ARCHIVO_CIUDADES_COMPLETADAS = "ciudades_completadas.csv"
 
 # --- Categorías de negocios (PRIORIZADAS) ---
-# PRIMERO: Peluquerías, Licorerías y Locales de Comida en TODA BOLIVIA
+# PRIMERO: Peluquerías, Barberías, Licorerías y Locales de Comida en TODA BOLIVIA
 # DESPUÉS: Resto de negocios
 CATEGORIAS_NEGOCIOS = [
     # ═══════════════════════════════════════════════════════════
@@ -74,8 +75,8 @@ CATEGORIAS_NEGOCIOS = [
     # 2. LICORERÍAS
     "Licorerías", "Distribuidoras de bebidas", "Vinotecas",
     
-    # 3. LOCALES DE COMIDA
-    "Pizzerías", "Hamburgeserías", "Heladerías", "Comida rápida",
+    # 3. LOCALES DE COMIDA (orden solicitado)
+    "Comida rápida", "Heladerías", "Pizzerías", "Hamburgeserías",
     "Restaurantes", "Pollerías", "Churrasquerías", "Salteñerías",
     "Snacks", "Cafeterías", "Juguerías", "Cevicherías",
     "Panaderías", "Pastelerías", "Food trucks", "Açaí",

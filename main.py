@@ -39,6 +39,7 @@ from gestor_contactados import (
     obtener_ciudades_completadas,
     marcar_ciudad_completada,
     avanzar_a_siguiente_ciudad,
+    resetear_categorias_buscadas,
 )
 import config
 
@@ -162,22 +163,20 @@ def subir_contactados_a_remoto():
 
 def elegir_ciudad() -> str:
     """
-    Retorna la ciudad actual para buscar.
-    Sistema SECUENCIAL: se agota una ciudad antes de pasar a la siguiente.
-    Empieza por Cochabamba y avanza por departamentos.
+    Retorna la siguiente ciudad pendiente según el orden nacional definido.
+    Siempre prioriza la primera ciudad NO completada de CIUDADES_BOLIVIA.
     """
     completadas = obtener_ciudades_completadas()
-    ciudad = obtener_ciudad_actual()
+    ciudad_guardada = obtener_ciudad_actual()
 
-    # Si la ciudad actual ya está completada, avanzar
-    if ciudad in completadas:
-        ciudad = avanzar_a_siguiente_ciudad()
-        if not ciudad:
-            return None  # Todas completadas
-    else:
-        guardar_ciudad_actual(ciudad)
+    for ciudad in config.CIUDADES_BOLIVIA:
+        if ciudad not in completadas:
+            if ciudad != ciudad_guardada:
+                resetear_categorias_buscadas()
+            guardar_ciudad_actual(ciudad)
+            return ciudad
 
-    return ciudad
+    return None  # Todas completadas
 
 
 def mostrar_config(ciudad: str, faltantes: int):
